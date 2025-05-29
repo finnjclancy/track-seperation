@@ -27,7 +27,6 @@ def download_youtube(url, job_dir):
         }],
         'quiet': True,
         'no_warnings': True,
-        'cookiefile': 'youtube_cookies.txt',
     }
     with YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url)
