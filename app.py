@@ -2,12 +2,15 @@ import os
 import re
 import uuid
 import subprocess
-from flask import Blueprint, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory
+from flask_cors import CORS
 from yt_dlp import YoutubeDL
 
-app = Blueprint('api', __name__)
+app = Flask(__name__)
+CORS(app)
 BASE = os.path.abspath(os.path.dirname(__file__))
 WORK_DIR = os.path.join(BASE, 'jobs')
+
 os.makedirs(WORK_DIR, exist_ok=True)
 
 def sanitize(title):
@@ -31,8 +34,7 @@ def download_youtube(url, job_dir):
         vid = info['id']
         title = info['title']
     mp3_src = os.path.join(job_dir, f"{vid}.mp3")
-    rename = sanitize(title) + '.mp3'
-    mp3_dst = os.path.join(job_dir, rename)
+    mp3_dst = os.path.join(job_dir, sanitize(title) + '.mp3')
     os.replace(mp3_src, mp3_dst)
     return mp3_dst, sanitize(title)
 
@@ -51,18 +53,15 @@ def process():
     job_id = str(uuid.uuid4())
     job_dir = os.path.join(WORK_DIR, job_id)
     os.makedirs(job_dir)
-    # Download
     mp3_path, title = download_youtube(url, job_dir)
-    # Separate
     stems_dir = os.path.join(job_dir, 'stems')
     separate_stems(mp3_path, stems_dir)
-    # List stems
-    stems = {}
-    for stem in ['vocals', 'drums', 'bass', 'other']:
-        fname = f"{stem}.wav"
-        stems[stem] = f"/api/jobs/{job_id}/stems/{fname}"
+    stems = {stem: f"/jobs/{job_id}/stems/{stem}.wav" for stem in ['vocals','drums','bass','other']}
     return jsonify({'job': job_id, 'title': title, 'stems': stems})
 
 @app.route('/jobs/<job_id>/stems/<filename>')
 def serve_stem(job_id, filename):
     return send_from_directory(os.path.join(WORK_DIR, job_id, 'stems'), filename)
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
