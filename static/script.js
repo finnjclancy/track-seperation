@@ -20,15 +20,14 @@ goBtn.onclick = () => {
 
   const evt = new EventSource(`/download?url=${encodeURIComponent(url)}`);
   evt.onmessage = e => {
-    // Append a newline after each log line
+    // Append newline
     logArea.textContent += e.data + '\n';
     logArea.scrollTop = logArea.scrollHeight;
     const m = e.data.match(/Done! Folder created: '(.+)'/);
-    if (m) { evt.close(); loadStems(m[1]); }
-  };
-  evt.onerror = () => {
-    logArea.textContent += 'Error\n';
-    evt.close();
+    if (m) {
+      evt.close();
+      loadStems(m[1]);
+    }
   };
   evt.onerror = () => {
     logArea.textContent += 'Error\n';
@@ -49,28 +48,37 @@ function buildUI(folder, files) {
     const name = file.split('/').pop().replace(/\.(wav|mp3)/i, '');
 
     // Card container
-    const card = document.createElement('div'); card.className = 'track-card';
-    
+    const card = document.createElement('div');
+    card.className = 'track-card';
+
     // Header with name and controls
-    const header = document.createElement('div'); header.className = 'track-header';
-    const title = document.createElement('div'); title.className = 'track-name'; title.textContent = name;
-    const ctrlBox = document.createElement('div'); ctrlBox.className = 'track-controls';
-    const muteBtn = document.createElement('button'); muteBtn.textContent = 'Mute';
+    const header = document.createElement('div');
+    header.className = 'track-header';
+    const title = document.createElement('div');
+    title.className = 'track-name';
+    title.textContent = name;
+    const ctrlBox = document.createElement('div');
+    ctrlBox.className = 'track-controls';
+    const muteBtn = document.createElement('button');
+    muteBtn.textContent = 'Mute';
     const slider = document.createElement('input');
-    slider.type = 'range'; slider.min = 0; slider.max = 1; slider.step = 0.01; slider.value = 1;
+    slider.type = 'range';
+    slider.min = 0; slider.max = 1; slider.step = 0.01; slider.value = 1;
     let prevVol = 1;
     let isMuted = false;
-    // Download button
     const dlBtn = document.createElement('a');
-    dlBtn.href = url; dlBtn.download = `${name}.wav`;
-    dlBtn.textContent = 'Download'; dlBtn.className = 'download-btn';
+    dlBtn.href = url;
+    dlBtn.download = `${name}.wav`;
+    dlBtn.textContent = '⬇'; // down arrow icon
+    dlBtn.title = 'Download';
 
     ctrlBox.append(muteBtn, slider, dlBtn);
     header.append(title, ctrlBox);
     card.append(header);
-    
+
     // Waveform
-    const wfDiv = document.createElement('div'); wfDiv.className = 'waveform';
+    const wfDiv = document.createElement('div');
+    wfDiv.className = 'waveform';
     card.append(wfDiv);
     tracksDiv.append(card);
 
@@ -86,7 +94,7 @@ function buildUI(folder, files) {
     ws.load(url);
     waves.push(ws);
 
-    // Sync scrubbing
+    // Sync scrubbing (click and drag)
     let isDown = false;
     wfDiv.addEventListener('mousedown', () => isDown = true);
     wfDiv.addEventListener('mouseup', () => isDown = false);
@@ -103,7 +111,7 @@ function buildUI(folder, files) {
       waves.forEach(w => w.seekTo(pos));
     });
 
-    // Mute & volume controls (manual mute)
+    // Mute & volume controls
     muteBtn.onclick = () => {
       isMuted = !isMuted;
       if (isMuted) {
@@ -120,13 +128,8 @@ function buildUI(folder, files) {
     slider.oninput = () => {
       const vol = Number(slider.value);
       ws.setVolume(vol);
-      if (vol === 0) {
-        isMuted = true;
-        muteBtn.textContent = 'Unmute';
-      } else {
-        isMuted = false;
-        muteBtn.textContent = 'Mute';
-      }
+      isMuted = vol === 0;
+      muteBtn.textContent = isMuted ? 'Unmute' : 'Mute';
     };
   });
 
