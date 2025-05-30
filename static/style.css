@@ -1,0 +1,119 @@
+:root {
+    --bg: #f0f2f5;
+    --card: #ffffff;
+    --border: #d0d5dd;
+    --accent: #2563eb;
+    --text: #1f2937;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'Inter', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  .container {
+    max-width: 960px;
+    margin: auto;
+    padding: 24px;
+  }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+  .input-group {
+    display: flex;
+    gap: 8px;
+  }
+  .input-group input {
+    width: 300px;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .input-group button {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .log {
+    background: var(--card);
+    border: 1px solid var(--border);
+    padding: 12px;
+    height: 140px;
+    overflow-y: auto;
+    font-family: monospace;
+    white-space: pre-wrap;
+    margin-bottom: 16px;
+    border-radius: 6px;
+  }
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .controls.hidden { display: none; }
+  .bpm-control {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .bpm-control input[type=range] {
+    cursor: pointer;
+  }
+  .tracks {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  .track-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  }
+  .track-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .track-name {
+    font-size: 1.1em;
+    font-weight: 600;
+  }
+  .track-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .track-controls button,
+  .controls button {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .track-controls input[type=range] {
+    width: 120px;
+  }
+  .track-controls .download-btn {
+    background: #10b981;
+  }
+  .track-controls .download-btn:hover {
+    background: #059669;
+  }
+  .waveform {
+    width: 100%;
+    height: 100px;
+    cursor: pointer;
+  }

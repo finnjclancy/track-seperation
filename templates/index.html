@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Stem Mixer</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://unpkg.com/wavesurfer.js"></script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Stem Mixer</h1>
+      <div class="input-group">
+        <input id="urlInput" placeholder="Paste YouTube link" />
+        <button id="goBtn">Load</button>
+      </div>
+    </header>
+    <div id="logArea" class="log">Waiting for input...</div>
+    <div id="controls" class="controls hidden">
+      <button id="playAllBtn">Play All</button>
+      <button id="pauseAllBtn">Pause All</button>
+      <div class="bpm-control">
+        <label for="bpmSlider">Speed:</label>
+        <input id="bpmSlider" type="range" min="50" max="150" value="100" />
+        <span id="bpmValue">100%</span>
+      </div>
+    </div>
+    <div id="tracks" class="tracks"></div>
+  </div>
+  <script src="/static/script.js"></script>
+</body>
+</html>
