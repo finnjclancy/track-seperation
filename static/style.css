@@ -112,6 +112,33 @@
   .track-controls .download-btn:hover {
     background: #059669;
   }
+  .track-controls .mute-btn.muted {
+    background-color: #ef4444;
+  }
+  .track-controls .mute-btn.unmuted {
+    background-color: #22c55e;
+  }
+  .track-controls .solo-btn {
+    background-color: #64748b;
+  }
+  .track-controls .solo-btn.active {
+    background-color: #22c55e;
+    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.5);
+  }
+  .track-controls .select-btn {
+    background-color: #64748b;
+  }
+  .track-controls .select-btn.active {
+    background-color: #0ea5e9;
+    box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.5);
+  }
+  .track-controls .download-combined-btn {
+    background-color: #10b981 !important;
+  }
+  .track-controls .download-combined-btn:disabled {
+    background-color: #9ca3af !important;
+    cursor: not-allowed;
+  }
   .waveform {
     width: 100%;
     height: 100px;

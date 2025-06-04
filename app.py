@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, Response, jsonify, send_file
-import subprocess, os, re
+import subprocess, os, re, tempfile
+from pydub import AudioSegment
 
 app = Flask(__name__)
 
@@ -35,6 +36,46 @@ def serve_stem(folder, fname):
     ext = os.path.splitext(fname)[1].lower()
     mime = 'audio/mpeg' if ext == '.mp3' else 'audio/wav'
     return send_file(file_path, mimetype=mime)
+
+@app.route('/merge-stems', methods=['POST'])
+def merge_stems():
+    data = request.json
+    folder = data['folder']
+    stem_files = data['stems']
+    
+    # Create a temporary directory for processing
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Load and mix all selected stems
+        combined = None
+        stem_names = []
+        for stem in stem_files:
+            file_path = os.path.join(sanitize(folder), 'stems', stem)
+            audio = AudioSegment.from_file(file_path)
+            # Extract stem name without extension and add to list
+            stem_name = os.path.splitext(os.path.basename(stem))[0]
+            stem_names.append(stem_name)
+            if combined is None:
+                combined = audio
+            else:
+                combined = combined.overlay(audio)
+        
+        if combined is None:
+            return jsonify({'error': 'No stems selected'}), 400
+        
+        # Create filename: "{youtube_title} {stem1} {stem2}.mp3"
+        youtube_title = folder  # folder name is the sanitized YouTube title
+        filename = f"{youtube_title} {' '.join(stem_names)}.mp3"
+        
+        # Export as MP3
+        output_path = os.path.join(temp_dir, 'combined.mp3')
+        combined.export(output_path, format='mp3')
+        
+        return send_file(
+            output_path,
+            mimetype='audio/mpeg',
+            as_attachment=True,
+            download_name=filename
+        )
 
 if __name__=='__main__':
     app.run(debug=True)
