@@ -2,15 +2,74 @@ const goBtn = document.getElementById('goBtn');
 const playAllBtn = document.getElementById('playAllBtn');
 const pauseAllBtn = document.getElementById('pauseAllBtn');
 const bpmSlider = document.getElementById('bpmSlider');
-const bpmValue = document.getElementById('bpmValue');
+const bpmInput = document.getElementById('bpmInput');
 const urlInput = document.getElementById('urlInput');
 const logArea = document.getElementById('logArea');
 const controls = document.getElementById('controls');
 const tracksDiv = document.getElementById('tracks');
+const progressBar = document.querySelector('.progress-bar');
+const progressBarInner = document.querySelector('.progress-bar-inner');
+const progressBarProgress = document.querySelector('.progress-bar-progress');
+const progressBarHandle = document.querySelector('.progress-bar-handle');
+const currentTimeSpan = document.getElementById('currentTime');
+const durationSpan = document.getElementById('duration');
 
 let waves = [];
 let soloedTracks = new Set();
 let previousVolumes = new Map();
+let isProgressSeeking = false;
+let maxDuration = 0;
+
+// Format time in seconds to MM:SS
+function formatTime(seconds) {
+  seconds = Math.floor(seconds);
+  const minutes = Math.floor(seconds / 60);
+  seconds = seconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+// Update progress bar and time displays
+function updateProgress() {
+  if (!waves.length || isProgressSeeking) return;
+  
+  const currentTime = waves[0].getCurrentTime();
+  const progress = (currentTime / maxDuration) * 100;
+  
+  progressBarProgress.style.width = `${progress}%`;
+  progressBarHandle.style.left = `${progress}%`;
+  currentTimeSpan.textContent = formatTime(currentTime);
+}
+
+// Handle progress bar interaction
+progressBar.addEventListener('mousedown', (e) => {
+  isProgressSeeking = true;
+  progressBar.classList.add('seeking');
+  updateProgressFromMouse(e);
+});
+
+document.addEventListener('mousemove', (e) => {
+  if (!isProgressSeeking) return;
+  updateProgressFromMouse(e);
+});
+
+document.addEventListener('mouseup', () => {
+  if (!isProgressSeeking) return;
+  isProgressSeeking = false;
+  progressBar.classList.remove('seeking');
+});
+
+function updateProgressFromMouse(e) {
+  const rect = progressBarInner.getBoundingClientRect();
+  let progress = (e.clientX - rect.left) / rect.width;
+  progress = Math.max(0, Math.min(1, progress));
+  
+  const time = progress * maxDuration;
+  waves.forEach(w => w.seekTo(progress));
+  
+  progressBarProgress.style.width = `${progress * 100}%`;
+  progressBarHandle.style.left = `${progress * 100}%`;
+  currentTimeSpan.textContent = formatTime(time);
+}
 
 // Load and separate on click
 goBtn.onclick = () => {
@@ -46,6 +105,7 @@ function loadStems(folder) {
 function buildUI(folder, files) {
   waves = [];
   const selectedStems = new Set();
+  maxDuration = 0;
   
   // Add download combined button to controls
   const downloadCombinedBtn = document.createElement('button');
@@ -159,6 +219,14 @@ function buildUI(folder, files) {
       height: 80,
       responsive: true
     });
+    
+    ws.on('ready', () => {
+      maxDuration = Math.max(maxDuration, ws.getDuration());
+      durationSpan.textContent = formatTime(maxDuration);
+    });
+    
+    ws.on('audioprocess', updateProgress);
+    
     ws.load(url);
     waves.push(ws);
 
@@ -264,10 +332,23 @@ function buildUI(folder, files) {
   });
 
   // BPM control listener
-  bpmSlider.oninput = () => {
-    const rate = bpmSlider.value / 100;
-    bpmValue.textContent = `${bpmSlider.value}%`;
+  function updateSpeed(value) {
+    value = Math.max(0, Math.min(200, value));
+    const rate = value / 100;
+    bpmSlider.value = value;
+    bpmInput.value = value;
     waves.forEach(w => w.setPlaybackRate(rate));
+  }
+
+  bpmSlider.oninput = () => {
+    updateSpeed(bpmSlider.value);
+  };
+
+  bpmInput.oninput = () => {
+    let value = parseInt(bpmInput.value);
+    if (isNaN(value)) return;
+    value = Math.max(0, Math.min(200, value));
+    updateSpeed(value);
   };
 
   controls.classList.remove('hidden');

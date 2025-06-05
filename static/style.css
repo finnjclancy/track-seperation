@@ -66,6 +66,19 @@
   }
   .bpm-control input[type=range] {
     cursor: pointer;
+    width: 120px;
+  }
+  .bpm-control input[type=number] {
+    width: 60px;
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    text-align: center;
+  }
+  .bpm-control input[type=number]::-webkit-inner-spin-button,
+  .bpm-control input[type=number]::-webkit-outer-spin-button {
+    opacity: 1;
+    height: 20px;
   }
   .tracks {
     display: grid;
@@ -143,4 +156,53 @@
     width: 100%;
     height: 100px;
     cursor: pointer;
+  }
+  .progress-container {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    padding: 0 12px;
+  }
+  .progress-container span {
+    font-size: 14px;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    min-width: 45px;
+  }
+  .progress-bar {
+    flex: 1;
+    padding: 10px 0;
+    cursor: pointer;
+  }
+  .progress-bar-inner {
+    position: relative;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+  }
+  .progress-bar-progress {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    width: 0%;
+  }
+  .progress-bar-handle {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 12px;
+    height: 12px;
+    background: var(--accent);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .progress-bar:hover .progress-bar-handle,
+  .progress-bar.seeking .progress-bar-handle {
+    opacity: 1;
   }

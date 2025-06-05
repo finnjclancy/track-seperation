@@ -21,9 +21,20 @@
       <button id="pauseAllBtn">Pause All</button>
       <div class="bpm-control">
         <label for="bpmSlider">Speed:</label>
-        <input id="bpmSlider" type="range" min="50" max="150" value="100" />
-        <span id="bpmValue">100%</span>
+        <input id="bpmSlider" type="range" min="0" max="200" value="100" />
+        <input id="bpmInput" type="number" min="0" max="200" value="100" />
+        <span>%</span>
       </div>
+    </div>
+    <div class="progress-container">
+      <span id="currentTime">0:00</span>
+      <div class="progress-bar">
+        <div class="progress-bar-inner">
+          <div class="progress-bar-progress"></div>
+          <div class="progress-bar-handle"></div>
+        </div>
+      </div>
+      <span id="duration">0:00</span>
     </div>
     <div id="tracks" class="tracks"></div>
   </div>
