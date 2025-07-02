@@ -19,7 +19,13 @@ def download_youtube(url, tmp='downloads'):
     return os.path.join(tmp, f"{info['id']}.mp3"), info['title']
 
 def separate(src, out):
-    subprocess.run(['demucs', src, '-o', out], check=True)
+    # Use a simpler approach - run demucs with a clean output directory
+    # First, clean up any existing stems directory
+    if os.path.exists(out):
+        shutil.rmtree(out)
+    
+    # Run demucs with explicit output format
+    subprocess.run(['demucs', '--out', out, src], check=True)
 
 if __name__ == '__main__':
     import sys
@@ -36,6 +42,11 @@ if __name__ == '__main__':
         os.makedirs(base, exist_ok=True)
         final = os.path.join(base, os.path.basename(src))
         os.replace(src, final)
+    
+    # Create stems directory
     stems = os.path.join(base, 'stems')
+    os.makedirs(stems, exist_ok=True)
+    
+    # Separate the audio
     separate(final, stems)
     print(f"Done! Folder created: '{base}'")
