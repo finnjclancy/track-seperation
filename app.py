@@ -7,6 +7,61 @@ app = Flask(__name__)
 def sanitize(folder):
     return re.sub(r'[\\/:"*?<>|]+', '_', folder)
 
+def parse_progress(line):
+    """Parse progress output and return clean messages"""
+    line = line.strip()
+    
+    # Download progress
+    download_match = re.match(r'\[download\]\s+(\d+\.?\d*)%', line)
+    if download_match:
+        percent = float(download_match.group(1))
+        if percent == 100:
+            return "Download complete! Now processing audio..."
+        return f"Downloading audio from YouTube... {percent:.1f}%"
+    
+    # Demucs progress bar
+    if '|' in line and '%|' in line:
+        # Extract percentage from progress bar
+        percent_match = re.search(r'(\d+)%\|', line)
+        if percent_match:
+            percent = int(percent_match.group(1))
+            if percent == 100:
+                return "Processing complete!"
+            return f"Processing audio with AI... {percent}%"
+    
+    # Model selection message
+    if 'htdemucs' in line and 'model' in line:
+        return "Loading AI model for audio separation..."
+    
+    # Track separation start
+    if 'Separating track' in line:
+        return "Starting AI audio separation..."
+    
+    # Storage location message
+    if 'Separated tracks will be stored' in line:
+        return "Preparing output directory..."
+    
+    # Success message
+    if "Done! Folder created:" in line:
+        folder_match = re.search(r"Done! Folder created: '(.+)'", line)
+        if folder_match:
+            folder_name = folder_match.group(1)
+            return f"Success! Audio separated into stems. Folder: {folder_name}"
+        return "Success! Audio separated into stems."
+    
+    # Skip other technical output
+    if any(skip in line for skip in [
+        'Selected model is a bag',
+        'Important: the default model',
+        '[download]',
+        'ETA',
+        'MiB/s',
+        'seconds/s'
+    ]):
+        return None
+    
+    return None
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -16,9 +71,13 @@ def download():
     url = request.args.get('url')
     cmd = ['python3', 'separate.py', url]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    
     def stream():
         for line in proc.stdout:
-            yield f"data: {line}\n\n"
+            clean_message = parse_progress(line)
+            if clean_message:
+                yield f"data: {clean_message}\n\n"
+    
     return Response(stream(), mimetype='text/event-stream')
 
 @app.route('/stems/<folder>')

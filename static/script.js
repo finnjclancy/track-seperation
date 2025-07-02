@@ -14,6 +14,16 @@ const progressBarHandle = document.querySelector('.progress-bar-handle');
 const currentTimeSpan = document.getElementById('currentTime');
 const durationSpan = document.getElementById('duration');
 
+// New progress elements
+const progressSection = document.getElementById('progressSection');
+const statusMessage = document.getElementById('statusMessage');
+const progressBarFill = document.getElementById('progressBar');
+const progressText = document.getElementById('progressText');
+const downloadPhase = document.getElementById('downloadPhase');
+const processingPhase = document.getElementById('processingPhase');
+const processingProgress = document.getElementById('processingProgress');
+const playbackProgress = document.getElementById('playbackProgress');
+
 let waves = [];
 let soloedTracks = new Set();
 let previousVolumes = new Map();
@@ -71,27 +81,108 @@ function updateProgressFromMouse(e) {
   currentTimeSpan.textContent = formatTime(time);
 }
 
+// Update progress display
+function updateProgressDisplay(message, percent = null) {
+  statusMessage.textContent = message;
+  if (percent !== null) {
+    progressBarFill.style.width = `${percent}%`;
+    progressText.textContent = `${Math.round(percent)}%`;
+  }
+}
+
+// Update phase indicators
+function updatePhaseIndicators(phase, status) {
+  if (phase === 'download') {
+    if (status === 'active') {
+      downloadPhase.classList.add('active');
+      downloadPhase.classList.remove('complete');
+    } else if (status === 'complete') {
+      downloadPhase.classList.remove('active');
+      downloadPhase.classList.add('complete');
+    }
+  } else if (phase === 'processing') {
+    if (status === 'active') {
+      processingPhase.classList.add('active');
+      processingPhase.classList.remove('complete');
+      processingProgress.classList.remove('hidden');
+    } else if (status === 'complete') {
+      processingPhase.classList.remove('active');
+      processingPhase.classList.add('complete');
+      processingProgress.classList.add('hidden');
+    }
+  }
+}
+
 // Load and separate on click
 goBtn.onclick = () => {
   const url = urlInput.value.trim();
   if (!url) return;
-  logArea.textContent = '';
+  
+  // Show progress section and hide other elements
+  progressSection.classList.remove('hidden');
+  logArea.classList.add('hidden');
   tracksDiv.innerHTML = '';
   controls.classList.add('hidden');
+  playbackProgress.classList.add('hidden');
+  
+  // Reset phases
+  downloadPhase.classList.remove('active', 'complete');
+  processingPhase.classList.remove('active', 'complete');
+  processingProgress.classList.add('hidden');
+  
+  // Start download phase
+  updatePhaseIndicators('download', 'active');
+  updateProgressDisplay('Starting download...');
+
+  let completedSuccessfully = false;
 
   const evt = new EventSource(`/download?url=${encodeURIComponent(url)}`);
   evt.onmessage = e => {
-    // Append newline
-    logArea.textContent += e.data + '\n';
-    logArea.scrollTop = logArea.scrollHeight;
-    const m = e.data.match(/Done! Folder created: '(.+)'/);
-    if (m) {
-      evt.close();
-      loadStems(m[1]);
+    const message = e.data;
+    
+    // Parse progress from message
+    if (message.includes('Downloading audio from YouTube...')) {
+      const percentMatch = message.match(/(\d+\.?\d*)%/);
+      if (percentMatch) {
+        const percent = parseFloat(percentMatch[1]);
+        updateProgressDisplay(`Downloading... ${percent.toFixed(1)}%`);
+      }
+    } else if (message.includes('Download complete! Now processing audio...')) {
+      // Complete download phase, start processing phase
+      updatePhaseIndicators('download', 'complete');
+      updatePhaseIndicators('processing', 'active');
+      updateProgressDisplay('Download complete! Starting AI processing...');
+    } else if (message.includes('Processing audio with AI...')) {
+      const percentMatch = message.match(/(\d+)%/);
+      if (percentMatch) {
+        const percent = parseFloat(percentMatch[1]);
+        updateProgressDisplay(`Processing with AI... ${percent}%`, percent);
+      }
+    } else if (message.includes('Processing complete!')) {
+      updatePhaseIndicators('processing', 'complete');
+      updateProgressDisplay('Processing complete!', 100);
+    } else if (message.includes('Success!')) {
+      completedSuccessfully = true;
+      updateProgressDisplay(message, 100);
+      setTimeout(() => {
+        progressSection.classList.add('hidden');
+        evt.close();
+        const folderMatch = message.match(/Folder: (.+)/);
+        if (folderMatch) {
+          loadStems(folderMatch[1]);
+        }
+      }, 1000);
+    } else {
+      // For other messages, just update the text without changing progress
+      updateProgressDisplay(message);
     }
   };
+  
   evt.onerror = () => {
-    logArea.textContent += 'Error\n';
+    // Only show error if we haven't successfully completed
+    if (!completedSuccessfully) {
+      updateProgressDisplay('Error occurred during processing');
+    }
     evt.close();
   };
 };
@@ -352,6 +443,7 @@ function buildUI(folder, files) {
   };
 
   controls.classList.remove('hidden');
+  playbackProgress.classList.remove('hidden');
 }
 
 // Global play/pause
