@@ -222,12 +222,24 @@ function buildUI(folder, files) {
       
       if (!response.ok) throw new Error('Failed to merge stems');
       
+      // Create filename: "{youtube_title} - {stem1}, {stem2}.mp3"
+      const selectedStemNames = Array.from(selectedStems).map(stem => {
+        return stem.split('/').pop().replace(/\.(wav|mp3)/i, '');
+      });
+      
+      let filename;
+      if (selectedStemNames.length === 1) {
+        filename = `${folder} - ${selectedStemNames[0]}.mp3`;
+      } else {
+        filename = `${folder} - ${selectedStemNames.join(', ')}.mp3`;
+      }
+      
       // Create a temporary link to download the file
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'combined_stems.mp3';
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
