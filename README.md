@@ -1,4 +1,11 @@
+most used thing i've made, use it everyday
+
 # Track Separation Tool
+
+isolate vocals, bass, drums, or everything else from audio <br>
+
+audio is taken from youtube video - you send the link to the yt video
+
 made this because i wanted to find out when the hi-hats came in on Time Was by Canned Heat
 https://youtu.be/uEeqy625jYU?si=loYN3Ri6LrWNwh3z 
 
