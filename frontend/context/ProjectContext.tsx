@@ -174,6 +174,8 @@ interface ProjectContextType {
     setTool: (tool: 'pointer' | 'split') => void;
     selectedClipId: string | null;
     setSelectedClipId: (id: string | null) => void;
+    snapEnabled: boolean;
+    toggleSnap: () => void;
 }
 
 const ProjectContext = createContext<ProjectContextType | undefined>(undefined);
@@ -198,6 +200,7 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
     const [zoom, setZoom] = useState(50); // 50px = 1 second
     const [tool, setTool] = useState<'pointer' | 'split'>('pointer');
     const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
+    const [snapEnabled, setSnapEnabled] = useState(true);
 
     const addSegmentToLibraryState = (segment: LibraryItem) => {
         setLibrary(prev => {
@@ -494,7 +497,9 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
             tool,
             setTool,
             selectedClipId,
-            setSelectedClipId
+            setSelectedClipId,
+            snapEnabled,
+            toggleSnap: () => setSnapEnabled(prev => !prev)
         }}>
             {children}
         </ProjectContext.Provider>

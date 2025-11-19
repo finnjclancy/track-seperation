@@ -23,6 +23,7 @@ I want to be able to change the speed of a stem
 I want to be able to drag a cut stem to make it longer, which would change the timestamps by however much i drag it
 
 I want to be able to cut better. I want a button to cut from where the red pin is and just cut manually by clicking. 
+
 <br>
 
 
@@ -32,3 +33,4 @@ I want to be able to delete a stem from the library
 I want to keep the whole STEM in the libabry to eventually drag over. If a stem has been cut, that too can be in the libarbry, but it should not delete the original file.
 confirm delete from library section
 rename cut stems
+when i press restart, the pin stays where it is but 

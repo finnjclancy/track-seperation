@@ -13,6 +13,8 @@ import { Session } from '@supabase/supabase-js';
 import { DndContext, DragEndEvent, DragOverlay, useSensor, useSensors, PointerSensor, DragStartEvent } from '@dnd-kit/core';
 import { createSegmentName } from '@/lib/time';
 
+const SNAP_THRESHOLD_SECONDS = 0.1;
+
 type DragItemData =
     | { type: 'library-item'; item: LibraryItem }
     | { type: 'clip'; clip: Clip };
@@ -25,7 +27,7 @@ type TrackDropData = {
 
 function StudioContent({ session }: { session: Session }) {
     const [showImport, setShowImport] = useState(false);
-    const { clips, updateClip, addClip, zoom, tracks, removeClip, selectedClipId, setSelectedClipId } = useProject();
+    const { clips, updateClip, addClip, zoom, tracks, removeClip, selectedClipId, setSelectedClipId, snapEnabled } = useProject();
     const [activeDragItem, setActiveDragItem] = useState<DragItemData | null>(null);
 
     const sensors = useSensors(
@@ -130,7 +132,7 @@ function StudioContent({ session }: { session: Session }) {
             
             if (clip) {
                 const deltaSeconds = delta.x / zoom;
-                const newStartTime = Math.max(0, clip.startTime + deltaSeconds);
+                let newStartTime = Math.max(0, clip.startTime + deltaSeconds);
                 
                 // Check if moved to a different track
                 let newTrackId = clip.trackId;
@@ -141,6 +143,26 @@ function StudioContent({ session }: { session: Session }) {
                     } else if (tracks.some(t => t.id === over.id)) {
                         newTrackId = over.id as string;
                     }
+                }
+
+                if (snapEnabled) {
+                    const snaps = clips
+                        .filter(other => other.id !== clipId && other.trackId === newTrackId);
+
+                    snaps.forEach(other => {
+                        const otherStart = other.startTime;
+                        const otherEnd = other.startTime + other.duration;
+
+                        if (Math.abs(newStartTime - otherEnd) <= SNAP_THRESHOLD_SECONDS) {
+                            newStartTime = otherEnd;
+                            return;
+                        }
+
+                        const currentClipEnd = newStartTime + clip.duration;
+                        if (Math.abs(currentClipEnd - otherStart) <= SNAP_THRESHOLD_SECONDS) {
+                            newStartTime = Math.max(0, otherStart - clip.duration);
+                        }
+                    });
                 }
 
                 updateClip(clipId, { 
