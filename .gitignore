@@ -1,1 +1,16 @@
 .venv
+venv
+venv/
+backend/.env
+backend/venv
+frontend/.env
+frontend/.env.local
+frontend/.env.production
+frontend/.next
+frontend/node_modules
+node_modules
+.env
+.env.local
+.DS_Store
+*.pyc
+__pycache__/

@@ -1,32 +1,41 @@
-most used thing i've made, use it everyday
+# AI Music Studio
 
-# Track Separation Tool
+A web-based Digital Audio Workstation (DAW) that lets you import songs from YouTube, separate them into stems using AI, and remix them with virtual instruments.
 
-isolate vocals, bass, drums, or everything else from audio <br>
+## Tech Stack
 
-audio is taken from youtube video - you send the link to the yt video
+- **Frontend:** Next.js (React), Tone.js, Tailwind CSS
+- **AI Engine:** Python (FastAPI), Demucs, yt-dlp
+- **Backend/Storage:** Supabase
 
-made this because i wanted to find out when the hi-hats came in on Time Was by Canned Heat
-https://youtu.be/uEeqy625jYU?si=loYN3Ri6LrWNwh3z 
+## Setup
 
-run this locally and be your own dj, input a youtube link and press load:
-- wait for the audio of the video to download
-- wait for the audio to be split into different tracks:
-  - vocals
-  - drums
-  - bass
-  - other (not 1-3)
+### Prerequisites
+- Node.js
+- Python 3.9+
+- FFmpeg
 
-there's a basic html page for you to interact with. you can:
-- pause/play all tracks
-- mute certain stems
-- solo certain stems
+### Environment Variables
 
-you can also download individual stems or a combination of what you want e.g. just the drums + bass
-- Get individual stems (vocals, drums, bass, etc)
-- Play/pause all tracks
-- Control volume for each track
-- Change playback speed
-- Download individual stems
+Create the following files before running any services:
 
-## 
+- `backend/.env` – copy from `backend/.env.example` and provide your Supabase project URL plus the **service role** key (never commit the real key).
+- `frontend/.env.local` – copy from `frontend/.env.example` and fill in the Supabase URL plus the **anon/public** key.
+
+These values are required because both the FastAPI backend and the Next.js frontend read directly from environment variables at runtime.
+
+### Installation
+
+1. **Frontend**
+   ```bash
+   cd frontend
+   npm install
+   npm run dev
+   ```
+
+2. **Backend**
+   ```bash
+   cd backend
+   pip install -r requirements.txt
+   uvicorn main:app --reload
+   ```
