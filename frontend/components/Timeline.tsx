@@ -3,6 +3,7 @@ import { useProject, Clip, Track } from '@/context/ProjectContext';
 import { TimelineClip } from './TimelineClip';
 import { useDroppable } from '@dnd-kit/core';
 import { MousePointer2, Scissors, Plus, Magnet } from 'lucide-react';
+import { formatTimestampDetailed } from '@/lib/time';
 
 // Droppable Track Row Component
 function TrackRow({ track, clips }: { track: Track, clips: Clip[] }) {
@@ -39,7 +40,7 @@ function TrackRow({ track, clips }: { track: Track, clips: Clip[] }) {
 }
 
 export function Timeline() {
-    const { tracks, clips, addTrack, zoom, currentTime, duration, setZoom, tool, setTool, seek, setSelectedClipId, snapEnabled, toggleSnap } = useProject();
+    const { tracks, clips, addTrack, zoom, currentTime, duration, setZoom, tool, setTool, seek, setSelectedClipId, snapEnabled, toggleSnap, splitClip } = useProject();
     // Remove the main timeline droppable, we want individual track droppables
     // const { setNodeRef } = useDroppable({ id: 'timeline' });
 
@@ -50,12 +51,27 @@ export function Timeline() {
         seek(time);
     };
 
-    // Generate time markers
+    const clipAtPlayhead = clips.find(clip =>
+        currentTime >= clip.startTime && currentTime <= clip.startTime + clip.duration
+    );
+
+    const handleSplitAtPlayhead = () => {
+        if (clipAtPlayhead) {
+            splitClip(clipAtPlayhead.id, currentTime);
+        }
+    };
+
+    // Generate time markers every second with stronger ticks every 5 seconds
     const markers = [];
-    for (let i = 0; i < duration; i += 5) {
+    for (let i = 0; i <= duration; i += 1) {
+        const isMajor = i % 5 === 0;
         markers.push(
-            <div key={i} className="absolute top-0 bottom-0 border-l border-zinc-800 text-[10px] text-zinc-500 pl-1 select-none pointer-events-none" style={{ left: i * zoom }}>
-                {i}s
+            <div
+                key={i}
+                className={`absolute top-0 bottom-0 border-l ${isMajor ? 'border-zinc-600' : 'border-zinc-800'} text-[10px] ${isMajor ? 'text-zinc-300' : 'text-zinc-500'} pl-1 select-none pointer-events-none`}
+                style={{ left: i * zoom }}
+            >
+                {isMajor ? formatTimestampDetailed(i) : ''}
             </div>
         );
     }
@@ -84,14 +100,25 @@ export function Timeline() {
 
                 <div className="w-px h-6 bg-zinc-800 mx-2" />
 
-                <button
-                    onClick={toggleSnap}
-                    className={`p-2 rounded flex items-center gap-2 text-xs font-medium transition-colors ${snapEnabled ? 'bg-indigo-600 text-white' : 'text-zinc-400 hover:text-white bg-zinc-800'}`}
-                    title="Toggle Snap"
-                >
-                    <Magnet size={14} />
-                    Snap
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={toggleSnap}
+                        className={`p-2 rounded flex items-center gap-2 text-xs font-medium transition-colors ${snapEnabled ? 'bg-indigo-600 text-white' : 'text-zinc-400 hover:text-white bg-zinc-800'}`}
+                        title="Toggle Snap"
+                    >
+                        <Magnet size={14} />
+                        Snap
+                    </button>
+                    <button
+                        onClick={handleSplitAtPlayhead}
+                        disabled={!clipAtPlayhead}
+                        className="p-2 rounded bg-zinc-800 text-xs font-medium flex items-center gap-1 hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                        title="Split at Playhead"
+                    >
+                        <Scissors size={14} />
+                        Split at Pin
+                    </button>
+                </div>
 
                 <div className="flex items-center gap-2">
                     <div className="text-xs text-zinc-400">Zoom</div>
@@ -131,6 +158,9 @@ export function Timeline() {
                         style={{ left: currentTime * zoom }}
                     >
                         <div className="absolute -top-1 -left-1.5 w-3 h-3 bg-red-500 rotate-45 transform origin-center" />
+                        <div className="absolute -top-6 -translate-x-1/2 left-1/2 bg-red-500 text-white text-[10px] font-mono px-2 py-0.5 rounded">
+                            {formatTimestampDetailed(currentTime)}
+                        </div>
                     </div>
 
                     {/* Track Rows */}

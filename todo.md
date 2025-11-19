@@ -10,7 +10,6 @@ download buttons to download stems, cut stems, whole tracks etc.
 
 I want to be able to live record a long session, like it could be 30 minutes or longer. How should we do this? I'd like to be able to cut this up and move it around, add other sounds, etc. 
 
-I want to have a snap feature, like a magnet.
 
 I want to be able to mute a track
 
@@ -34,3 +33,5 @@ I want to keep the whole STEM in the libabry to eventually drag over. If a stem 
 confirm delete from library section
 rename cut stems
 when i press restart, the pin stays where it is but 
+I want to have a snap feature, like a magnet.
+

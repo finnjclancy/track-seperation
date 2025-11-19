@@ -2,6 +2,7 @@ import React from 'react';
 import { Play, Pause, Square, FastForward, Rewind } from 'lucide-react';
 import { useProject } from '@/context/ProjectContext';
 import { audioEngine } from '@/lib/audio';
+import { formatTimestampDetailed } from '@/lib/time';
 
 export function Transport() {
     const { isPlaying, setIsPlaying, currentTime, seek } = useProject();
@@ -21,12 +22,6 @@ export function Transport() {
         seek(0, { autoResume: false });
     };
 
-    const formatTime = (seconds: number) => {
-        const m = Math.floor(seconds / 60);
-        const s = Math.floor(seconds % 60);
-        return `${m}:${s.toString().padStart(2, '0')}`;
-    };
-
     return (
         <div className="fixed bottom-0 left-0 right-0 h-20 bg-zinc-900 border-t border-zinc-800 flex items-center px-8 gap-8 text-zinc-200 z-50">
             <div className="flex items-center gap-4">
@@ -36,7 +31,7 @@ export function Transport() {
                 </button>
             </div>
             <div className="font-mono text-2xl text-indigo-400">
-                {formatTime(currentTime)}
+                {formatTimestampDetailed(currentTime)}
             </div>
         </div>
     );
