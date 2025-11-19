@@ -6,7 +6,7 @@ import { MousePointer2, Scissors, Plus, Magnet } from 'lucide-react';
 import { formatTimestampDetailed } from '@/lib/time';
 
 // Droppable Track Row Component
-function TrackRow({ track, clips }: { track: Track, clips: Clip[] }) {
+function TrackRow({ track, clips, isActive, onActivate }: { track: Track, clips: Clip[], isActive: boolean, onActivate: (id: string) => void }) {
     const rowRef = React.useRef<HTMLDivElement | null>(null);
     const { setNodeRef, isOver } = useDroppable({
         id: track.id,
@@ -25,7 +25,8 @@ function TrackRow({ track, clips }: { track: Track, clips: Clip[] }) {
     return (
         <div 
             ref={assignRef}
-            className={`h-24 border-b border-zinc-800/50 w-full relative group transition-colors ${isOver ? 'bg-indigo-500/10' : ''}`}
+            onClick={() => onActivate(track.id)}
+            className={`h-24 border-b border-zinc-800/50 w-full relative group transition-colors ${isOver || isActive ? 'bg-indigo-500/5' : ''}`}
         >
             <div className="absolute top-0 left-0 right-0 h-6 bg-zinc-900/80 border-b border-zinc-800 flex items-center px-3 text-xs uppercase tracking-wide text-zinc-500">
                 {track.name}
@@ -40,7 +41,7 @@ function TrackRow({ track, clips }: { track: Track, clips: Clip[] }) {
 }
 
 export function Timeline() {
-    const { tracks, clips, addTrack, zoom, currentTime, duration, setZoom, tool, setTool, seek, setSelectedClipId, snapEnabled, toggleSnap, splitClip } = useProject();
+    const { tracks, clips, addTrack, zoom, currentTime, duration, setZoom, tool, setTool, seek, setSelectedClipId, snapEnabled, toggleSnap, splitClip, activeTrackId, setActiveTrackId } = useProject();
     // Remove the main timeline droppable, we want individual track droppables
     // const { setNodeRef } = useDroppable({ id: 'timeline' });
 
@@ -51,14 +52,12 @@ export function Timeline() {
         seek(time);
     };
 
-    const clipAtPlayhead = clips.find(clip =>
+    const clipsAtPlayhead = clips.filter(clip =>
         currentTime >= clip.startTime && currentTime <= clip.startTime + clip.duration
     );
 
     const handleSplitAtPlayhead = () => {
-        if (clipAtPlayhead) {
-            splitClip(clipAtPlayhead.id, currentTime);
-        }
+        clipsAtPlayhead.forEach(clip => splitClip(clip.id, currentTime));
     };
 
     // Generate time markers every second with stronger ticks every 5 seconds
@@ -111,7 +110,7 @@ export function Timeline() {
                     </button>
                     <button
                         onClick={handleSplitAtPlayhead}
-                        disabled={!clipAtPlayhead}
+                        disabled={clipsAtPlayhead.length === 0}
                         className="p-2 rounded bg-zinc-800 text-xs font-medium flex items-center gap-1 hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed"
                         title="Split at Playhead"
                     >
@@ -166,7 +165,13 @@ export function Timeline() {
                     {/* Track Rows */}
                     <div className="relative min-h-[400px]">
                         {tracks.map((track) => (
-                            <TrackRow key={track.id} track={track} clips={clips} />
+                            <TrackRow
+                                key={track.id}
+                                track={track}
+                                clips={clips}
+                                isActive={activeTrackId === track.id}
+                                onActivate={setActiveTrackId}
+                            />
                         ))}
                     </div>
                 </div>

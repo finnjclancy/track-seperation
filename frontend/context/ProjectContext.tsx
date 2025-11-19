@@ -164,6 +164,8 @@ interface ProjectContextType {
     removeClip: (id: string) => void;
     resizeClip: (id: string, updates: { startTime?: number; duration?: number; offset?: number }) => void;
     splitClip: (id: string, splitTime: number) => void;
+    copyClip: (id: string) => void;
+    pasteClip: (trackId?: string, startTime?: number) => void;
     isPlaying: boolean;
     setIsPlaying: (playing: boolean) => void;
     currentTime: number;
@@ -177,6 +179,8 @@ interface ProjectContextType {
     setSelectedClipId: (id: string | null) => void;
     snapEnabled: boolean;
     toggleSnap: () => void;
+    activeTrackId: string;
+    setActiveTrackId: (id: string) => void;
 }
 
 const ProjectContext = createContext<ProjectContextType | undefined>(undefined);
@@ -202,6 +206,8 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
     const [tool, setTool] = useState<'pointer' | 'split'>('pointer');
     const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
     const [snapEnabled, setSnapEnabled] = useState(true);
+    const [activeTrackId, setActiveTrackId] = useState<string>('track-1');
+    const [copiedClip, setCopiedClip] = useState<Clip | null>(null);
 
     const addSegmentToLibraryState = (segment: LibraryItem) => {
         setLibrary(prev => {
@@ -215,8 +221,7 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
     const refreshPlayback = () => {
         if (!isPlaying) return;
         const position = audioEngine.getCurrentTime();
-        audioEngine.seek(position);
-        audioEngine.play();
+        audioEngine.seek(position, true);
         setCurrentTime(position);
     };
 
@@ -431,6 +436,30 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
         refreshPlayback();
     };
 
+    const copyClip = (id: string) => {
+        const clip = clips.find(c => c.id === id);
+        if (!clip) return;
+        setCopiedClip({ ...clip });
+    };
+
+    const pasteClip = (targetTrackId?: string, desiredStart?: number) => {
+        if (!copiedClip) return;
+        const clipDuration = copiedClip.duration;
+        const trackId = targetTrackId || copiedClip.trackId;
+        const maxStart = Math.max(0, duration - clipDuration);
+        const startTime = Math.min(Math.max(0, desiredStart ?? copiedClip.startTime), maxStart);
+
+        const newClip: Clip = {
+            ...copiedClip,
+            id: crypto.randomUUID(),
+            trackId,
+            startTime
+        };
+
+        addClip(newClip);
+        setSelectedClipId(newClip.id);
+    };
+
     const persistClipSegment = async (clip: Clip) => {
         if (!clip.stemId || !userId) return;
 
@@ -526,11 +555,9 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
 
     const seek = (time: number, options: { autoResume?: boolean } = {}) => {
         setCurrentTime(time);
-        audioEngine.seek(time);
         const shouldResume = options.autoResume ?? isPlaying;
-        if (shouldResume) {
-            audioEngine.play();
-        }
+        audioEngine.seek(time, shouldResume);
+        setIsPlaying(shouldResume);
     };
 
     return (
@@ -545,6 +572,8 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
             addClip,
             updateClip,
             resizeClip,
+            copyClip,
+            pasteClip,
             removeClip,
             splitClip,
             isPlaying,
@@ -559,7 +588,9 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
             selectedClipId,
             setSelectedClipId,
             snapEnabled,
-            toggleSnap: () => setSnapEnabled(prev => !prev)
+            toggleSnap: () => setSnapEnabled(prev => !prev),
+            activeTrackId,
+            setActiveTrackId
         }}>
             {children}
         </ProjectContext.Provider>

@@ -136,36 +136,34 @@ class AudioEngine {
 
     play() {
         if (typeof window === 'undefined') return;
-        const startPosition = this.pausedPosition;
-        this.rescheduleAll(startPosition);
-        Tone.Transport.stop();
-        Tone.Transport.start(undefined, startPosition);
+        this.rescheduleAll(this.pausedPosition);
+        Tone.Transport.seconds = this.pausedPosition;
+        Tone.Transport.start();
     }
 
     pause() {
         if (typeof window === 'undefined') return;
-        this.pausedPosition = Tone.Transport.seconds;
-        this.players.forEach(player => player.unsync());
         Tone.Transport.pause();
-        this.players.forEach(player => this.stopPlayer(player));
+        this.pausedPosition = Tone.Transport.seconds;
     }
 
     stop() {
         if (typeof window === 'undefined') return;
-        this.players.forEach(player => player.unsync());
         Tone.Transport.stop();
         this.pausedPosition = 0;
-        this.players.forEach(player => this.stopPlayer(player));
         this.rescheduleAll(0);
     }
 
-    seek(time: number) {
+    seek(time: number, resume: boolean = false) {
         if (typeof window === 'undefined') return;
+        Tone.Transport.pause();
         this.pausedPosition = time;
         this.lastSeek = time;
-        Tone.Transport.stop();
         Tone.Transport.seconds = time;
         this.rescheduleAll(time);
+        if (resume) {
+            Tone.Transport.start();
+        }
     }
 
     getCurrentTime() {

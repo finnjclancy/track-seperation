@@ -5,7 +5,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { Trash2 } from 'lucide-react';
 
 export function TimelineClip({ clip }: { clip: Clip }) {
-    const { zoom, tool, splitClip, removeClip, selectedClipId, setSelectedClipId, resizeClip, duration: projectDuration } = useProject();
+    const { zoom, tool, splitClip, removeClip, selectedClipId, setSelectedClipId, resizeClip, duration: projectDuration, setActiveTrackId } = useProject();
     const [resizeState, setResizeState] = useState<{
         edge: 'start' | 'end';
         startX: number;
@@ -38,6 +38,7 @@ export function TimelineClip({ clip }: { clip: Clip }) {
 
         e.stopPropagation();
         setSelectedClipId(clip.id);
+        setActiveTrackId(clip.trackId);
     };
 
     const handleDelete = (e: React.MouseEvent) => {

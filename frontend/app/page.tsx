@@ -27,7 +27,7 @@ type TrackDropData = {
 
 function StudioContent({ session }: { session: Session }) {
     const [showImport, setShowImport] = useState(false);
-    const { clips, updateClip, addClip, zoom, tracks, removeClip, selectedClipId, setSelectedClipId, snapEnabled } = useProject();
+    const { clips, updateClip, addClip, zoom, tracks, removeClip, selectedClipId, setSelectedClipId, snapEnabled, copyClip, pasteClip, activeTrackId, currentTime } = useProject();
     const [activeDragItem, setActiveDragItem] = useState<DragItemData | null>(null);
 
     const sensors = useSensors(
@@ -44,12 +44,27 @@ function StudioContent({ session }: { session: Session }) {
                 event.preventDefault();
                 removeClip(selectedClipId);
                 setSelectedClipId(null);
+                return;
+            }
+
+            const isCopy = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'c';
+            const isPaste = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'v';
+
+            if (isCopy && selectedClipId) {
+                event.preventDefault();
+                copyClip(selectedClipId);
+                return;
+            }
+
+            if (isPaste) {
+                event.preventDefault();
+                pasteClip(activeTrackId, currentTime);
             }
         };
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [removeClip, selectedClipId, setSelectedClipId]);
+    }, [removeClip, selectedClipId, setSelectedClipId, copyClip, pasteClip, activeTrackId, currentTime]);
 
     const renderDragOverlayContent = () => {
         if (!activeDragItem) return null;
