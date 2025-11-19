@@ -162,6 +162,7 @@ interface ProjectContextType {
     addClip: (clip: Clip) => void;
     updateClip: (id: string, updates: Partial<Clip>) => void;
     removeClip: (id: string) => void;
+    resizeClip: (id: string, updates: { startTime?: number; duration?: number; offset?: number }) => void;
     splitClip: (id: string, splitTime: number) => void;
     isPlaying: boolean;
     setIsPlaying: (playing: boolean) => void;
@@ -209,6 +210,14 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
             }
             return [segment, ...prev];
         });
+    };
+
+    const refreshPlayback = () => {
+        if (!isPlaying) return;
+        const position = audioEngine.getCurrentTime();
+        audioEngine.seek(position);
+        audioEngine.play();
+        setCurrentTime(position);
     };
 
     const removeLibraryComponent = (componentId?: string) => {
@@ -364,12 +373,55 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
     const updateClip = (id: string, updates: Partial<Clip>) => {
         setClips(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
         audioEngine.updateClip(id, updates);
+        refreshPlayback();
     };
 
     const removeClip = (id: string) => {
         setClips(prev => prev.filter(c => c.id !== id));
         audioEngine.removeClip(id);
         setSelectedClipId(current => (current === id ? null : current));
+    };
+
+    const updateSegmentMetadata = (componentId: string, startOffset: number, duration: number) => {
+        setLibrary(prev => prev.map(item => item.id === componentId
+            ? { ...item, startOffset, endOffset: startOffset + duration, duration }
+            : item
+        ));
+    };
+
+    const resizeClip = (id: string, updates: { startTime?: number; duration?: number; offset?: number }) => {
+        const clip = clips.find(c => c.id === id);
+        if (!clip) return;
+
+        const newStart = Math.max(0, updates.startTime ?? clip.startTime);
+        const newDuration = Math.max(0.05, Math.min(updates.duration ?? clip.duration, duration - newStart));
+        const newOffset = Math.max(0, updates.offset ?? clip.offset);
+        const newName = createSegmentName(clip.baseName, newOffset, newOffset + newDuration, true);
+
+        setClips(prev => prev.map(c => c.id === id ? {
+            ...c,
+            startTime: newStart,
+            duration: newDuration,
+            offset: newOffset,
+            name: newName
+        } : c));
+
+        audioEngine.updateClip(id, {
+            startTime: newStart,
+            duration: newDuration,
+            offset: newOffset
+        });
+
+        if (clip.componentId) {
+            updateSegmentMetadata(clip.componentId, newOffset, newDuration);
+            supabase.from('stem_segments')
+                .update({
+                    start_time: newOffset,
+                    end_time: newOffset + newDuration
+                })
+                .eq('id', clip.componentId);
+        }
+        refreshPlayback();
     };
 
     const persistClipSegment = async (clip: Clip) => {
@@ -485,6 +537,7 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
             renameLibraryItem,
             addClip,
             updateClip,
+            resizeClip,
             removeClip,
             splitClip,
             isPlaying,

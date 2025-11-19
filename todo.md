@@ -19,7 +19,7 @@ I want to be able to change the loudness of a stem
 
 I want to be able to change the speed of a stem
 
-I want to be able to drag a cut stem to make it longer, which would change the timestamps by however much i drag it
+I want to be able to drag a cut stem to make it longer, which would change the timestamps by however much i drag it. the end timestamp cannot be longer than the end of the song. The start time stamp can not go before the start of the song. so hypothetically, a clip in the middle of the song can be made. This clip can then be dragged at the front to the beginning of the song and the clip can be dragged by the end and this cannot go to the end of the song. Please make sure that this is done correctly. 
 
 I want to be able to cut better. I want a button to cut from where the red pin is and just cut manually by clicking. 
 
