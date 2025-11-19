@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+python-multipart
+yt-dlp
+demucs
+supabase
+python-dotenv
+ffmpeg-python
+soundfile
+numpy<2
+torch==2.1.0
+torchaudio==2.1.0
