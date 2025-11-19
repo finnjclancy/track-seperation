@@ -4,7 +4,7 @@ import { useProject } from '@/context/ProjectContext';
 import { audioEngine } from '@/lib/audio';
 
 export function Transport() {
-    const { isPlaying, setIsPlaying, currentTime } = useProject();
+    const { isPlaying, setIsPlaying, currentTime, seek } = useProject();
 
     const togglePlay = () => {
         if (isPlaying) {
@@ -16,8 +16,9 @@ export function Transport() {
     };
 
     const stop = () => {
-        audioEngine.stop();
         setIsPlaying(false);
+        audioEngine.stop();
+        seek(0, { autoResume: false });
     };
 
     const formatTime = (seconds: number) => {
@@ -40,4 +41,3 @@ export function Transport() {
         </div>
     );
 }
-

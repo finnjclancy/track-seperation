@@ -166,7 +166,7 @@ interface ProjectContextType {
     isPlaying: boolean;
     setIsPlaying: (playing: boolean) => void;
     currentTime: number;
-    seek: (time: number) => void;
+    seek: (time: number, options?: { autoResume?: boolean }) => void;
     duration: number;
     zoom: number; // Pixels per second
     setZoom: (zoom: number) => void;
@@ -278,6 +278,12 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
         }
         return () => clearInterval(interval);
     }, [isPlaying]);
+
+    useEffect(() => {
+        if (clips.length === 0) {
+            audioEngine.clearAll();
+        }
+    }, [clips.length]);
 
     const addTrack = () => {
         setTracks(prev => [...prev, {
@@ -456,9 +462,13 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
         persistClipSegment(clip2);
     };
 
-    const seek = (time: number) => {
+    const seek = (time: number, options: { autoResume?: boolean } = {}) => {
         setCurrentTime(time);
         audioEngine.seek(time);
+        const shouldResume = options.autoResume ?? isPlaying;
+        if (shouldResume) {
+            audioEngine.play();
+        }
     };
 
     return (
