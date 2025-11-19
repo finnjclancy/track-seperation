@@ -43,7 +43,7 @@ def process_audio_task(url: str, user_id: str, project_id: str):
             "status_message": "AI separating tracks (this takes about 60s)..."
         }).eq("id", project_id).execute()
 
-        stems = separate_audio(audio_path, output_dir=temp_dir)
+        stems = separate_audio(audio_path, output_dir=temp_dir, project_id=project_id)
         
         # 3. Upload Stems
         supabase.table("projects").update({
@@ -54,7 +54,8 @@ def process_audio_task(url: str, user_id: str, project_id: str):
 
         stem_urls = {}
         stem_records = []
-        for stem_name, stem_path in stems.items():
+        total_stems = len(stems)
+        for idx, (stem_name, stem_path) in enumerate(stems.items(), start=1):
             # Destination: user_id/project_id/stem_name.wav
             dest_path = f"{user_id}/{project_id}/{stem_name}.wav"
             public_url = upload_file(stem_path, "stems", dest_path)
@@ -74,6 +75,11 @@ def process_audio_task(url: str, user_id: str, project_id: str):
                 "url": public_url,
                 "duration": duration
             })
+
+            supabase.table("projects").update({
+                "progress": 80 + int((idx / total_stems) * 20),
+                "status_message": f"Uploading {stem_name} ({idx}/{total_stems})"
+            }).eq("id", project_id).execute()
 
         if stem_records:
             supabase.table("stems").upsert(

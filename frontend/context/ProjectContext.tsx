@@ -242,6 +242,7 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
         if (!item) return;
 
         setLibrary(prev => prev.filter(entry => entry.id !== itemId));
+        setClips(prev => prev.filter(clip => item.isSegment ? clip.componentId !== itemId : clip.stemId !== item.stemId));
 
         try {
             if (item.isSegment) {
@@ -371,7 +372,13 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
     };
 
     const updateClip = (id: string, updates: Partial<Clip>) => {
-        setClips(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+        setClips(prev => prev.map(c => c.id === id ? {
+            ...c,
+            ...updates,
+            name: updates.offset !== undefined || updates.duration !== undefined
+                ? createSegmentName(c.baseName, updates.offset ?? c.offset, (updates.offset ?? c.offset) + (updates.duration ?? c.duration), true)
+                : c.name
+        } : c));
         audioEngine.updateClip(id, updates);
         refreshPlayback();
     };

@@ -20,7 +20,7 @@ export const formatTimestampDetailed = (seconds: number) => {
 };
 
 export const describeSegment = (start: number, end: number) => {
-    return `${formatTimestamp(start)} - ${formatTimestamp(end)}`;
+    return `${formatTimestampDetailed(start)} - ${formatTimestampDetailed(end)}`;
 };
 
 export const createSegmentName = (

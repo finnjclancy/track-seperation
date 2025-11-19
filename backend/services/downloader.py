@@ -20,13 +20,18 @@ def download_audio(url: str, output_dir: str = "temp_downloads", project_id: str
                 # Calculate percentage
                 p = d.get('_percent_str', '0%').replace('%','')
                 percent = float(p)
+                eta = d.get('_eta_str', '')
+                speed = d.get('_speed_str', '')
+                downloaded = d.get('_downloaded_bytes', 0) / (1024 * 1024)
+                total_bytes = d.get('total_bytes', d.get('total_bytes_estimate', 0))
+                total_mb = total_bytes / (1024 * 1024) if total_bytes else 0
                 
                 # Map download progress (0-100) to overall progress (0-30)
                 overall_progress = int(percent * 0.3)
                 
                 supabase.table("projects").update({
                     "progress": overall_progress,
-                    "status_message": f"Downloading... {percent:.1f}%"
+                    "status_message": f"Downloading {percent:.1f}% ({downloaded:.2f} / {total_mb:.2f} MB) {speed} ETA {eta}"
                 }).eq("id", project_id).execute()
             except:
                 pass

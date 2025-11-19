@@ -1,8 +1,10 @@
 import subprocess
 import os
 import shutil
+import time
+from services.storage import supabase
 
-def separate_audio(input_path: str, output_dir: str = "temp_stems"):
+def separate_audio(input_path: str, output_dir: str = "temp_stems", project_id: str = None):
     """
     Separates audio using Demucs.
     Returns a dictionary of stem paths.
@@ -17,7 +19,31 @@ def separate_audio(input_path: str, output_dir: str = "temp_stems"):
     cmd = ["demucs", "-n", "htdemucs", "--out", output_dir, input_path]
     
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        progress_points = [35, 40, 45, 50, 55, 60, 65, 70]
+        next_update = 0
+        last_update = 0.0
+
+        while True:
+            line = process.stdout.readline()
+            if line:
+                print(line.strip())
+            if process.poll() is not None:
+                break
+            if project_id and next_update < len(progress_points):
+                now = time.time()
+                if now - last_update > 5:  # update every ~5 seconds
+                    supabase.table("projects").update({
+                        "progress": progress_points[next_update],
+                        "status_message": f"Separating... (~{progress_points[next_update]}%)"
+                    }).eq("id", project_id).execute()
+                    next_update += 1
+                    last_update = now
+
+        stderr = process.communicate()[1]
+        if process.returncode != 0:
+            print(f"Demucs Error: {stderr}")
+            raise Exception("Audio separation failed")
     except subprocess.CalledProcessError as e:
         print(f"Demucs Error: {e.stderr}")
         raise Exception("Audio separation failed")
@@ -37,4 +63,3 @@ def separate_audio(input_path: str, output_dir: str = "temp_stems"):
             stems[stem] = stem_path
             
     return stems
-

@@ -114,7 +114,7 @@ export function Library() {
     const choppedStems = library.filter(item => item.isSegment);
     
     return (
-        <div className="relative w-72 bg-zinc-900 border-r border-zinc-800 flex flex-col shrink-0">
+        <div className="relative w-80 bg-zinc-900 border-r border-zinc-800 flex flex-col shrink-0">
             <div className="p-4 border-b border-zinc-800">
                 <h2 className="font-bold text-zinc-100 flex items-center gap-2">
                     <Music size={18} className="text-indigo-500" />
