@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { ProjectProvider, useProject, LibraryItem, Clip, Track } from '@/context/ProjectContext';
@@ -45,7 +45,8 @@ function StudioContent({ session, projectId }: { session: Session; projectId: st
         copyClip,
         pasteClip,
         activeTrackId,
-        currentTime
+        currentTime,
+        isSyncing
     } = useProject();
     const [activeDragItem, setActiveDragItem] = useState<DragItemData | null>(null);
 
@@ -56,6 +57,7 @@ function StudioContent({ session, projectId }: { session: Session; projectId: st
             },
         })
     );
+    const groupDragRef = useRef<{ clipIds: string[]; startTimes: Map<string, number> } | null>(null);
 
     useEffect(() => {
         let active = true;
@@ -98,7 +100,7 @@ function StudioContent({ session, projectId }: { session: Session; projectId: st
 
             if (isCopy && selectedClipIds.length > 0) {
                 event.preventDefault();
-                copyClip(selectedClipIds[0]);
+                copyClip();
                 return;
             }
 
@@ -137,6 +139,20 @@ function StudioContent({ session, projectId }: { session: Session; projectId: st
         const data = event.active.data.current as DragItemData | undefined;
         if (data?.type) {
             setActiveDragItem(data);
+        }
+        if (data?.type === 'clip') {
+            const clipId = data.clip.id;
+            const groupIds = selectedClipIds.includes(clipId) ? selectedClipIds : [clipId];
+            const startTimes = new Map<string, number>();
+            groupIds.forEach(id => {
+                const clipData = clips.find(c => c.id === id);
+                if (clipData) {
+                    startTimes.set(id, clipData.startTime);
+                }
+            });
+            groupDragRef.current = { clipIds: groupIds, startTimes };
+        } else {
+            groupDragRef.current = null;
         }
     };
 
@@ -190,6 +206,7 @@ function StudioContent({ session, projectId }: { session: Session; projectId: st
         if (active.data.current?.type === 'clip') {
             const clipId = active.id as string;
             const clip = clips.find(c => c.id === clipId);
+            const dragGroup = groupDragRef.current;
             
             if (clip) {
                 const deltaSeconds = delta.x / zoom;
@@ -225,11 +242,29 @@ function StudioContent({ session, projectId }: { session: Session; projectId: st
                     });
                 }
 
-                updateClip(clipId, { 
-                    startTime: newStartTime,
-                    trackId: newTrackId
-                });
+                const baseOriginal = dragGroup?.startTimes.get(clipId) ?? clip.startTime;
+                const deltaApplied = newStartTime - baseOriginal;
+
+                if (dragGroup && dragGroup.clipIds.length > 1) {
+                    dragGroup.clipIds.forEach(id => {
+                        const targetClip = clips.find(c => c.id === id);
+                        if (!targetClip) return;
+                        const original = dragGroup.startTimes.get(id) ?? targetClip.startTime;
+                        const targetStart = Math.max(0, original + deltaApplied);
+                        const updates: Partial<Clip> = { startTime: targetStart };
+                        if (id === clipId) {
+                            updates.trackId = newTrackId;
+                        }
+                        updateClip(id, updates);
+                    });
+                } else {
+                    updateClip(clipId, { 
+                        startTime: newStartTime,
+                        trackId: newTrackId
+                    });
+                }
             }
+            groupDragRef.current = null;
         }
     };
 
@@ -242,9 +277,14 @@ function StudioContent({ session, projectId }: { session: Session; projectId: st
                             ← All Projects
                         </Link>
                         <div>
-                            <h1 className="text-xl font-bold bg-linear-to-r from-indigo-500 to-purple-500 bg-clip-text text-transparent">
-                                {projectTitle || 'Project'}
-                            </h1>
+                            <div className="flex items-center gap-3">
+                                <h1 className="text-xl font-bold bg-linear-to-r from-indigo-500 to-purple-500 bg-clip-text text-transparent">
+                                    {projectTitle || 'Project'}
+                                </h1>
+                                <span className={`text-[11px] uppercase tracking-[0.3em] px-2 py-0.5 rounded-full border ${isSyncing ? 'border-amber-400 text-amber-200' : 'border-emerald-400 text-emerald-200'}`}>
+                                    {isSyncing ? 'Saving…' : 'Saved'}
+                                </span>
+                            </div>
                             <span className="text-xs text-zinc-500">
                                 {session.user.email}
                             </span>

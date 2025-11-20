@@ -43,9 +43,18 @@ exception
   when duplicate_object then null;
 end $$;
 
+do $$
+begin
+  create policy "Users can delete their own projects"
+    on public.projects for delete
+    using ( auth.uid() = user_id );
+exception
+  when duplicate_object then null;
+end $$;
+
 create table if not exists public.stems (
   id uuid primary key default uuid_generate_v4(),
-  project_id uuid references public.projects(id) on delete cascade,
+  project_id uuid references public.projects(id) on delete set null,
   user_id uuid references auth.users,
   name text not null,
   stem_type text not null,
@@ -94,15 +103,6 @@ do $$
 begin
   create policy "Users can update their stems"
     on public.stems for update
-    using ( auth.uid() = user_id );
-exception
-  when duplicate_object then null;
-end $$;
-
-do $$
-begin
-  create policy "Users can delete their stems"
-    on public.stems for delete
     using ( auth.uid() = user_id );
 exception
   when duplicate_object then null;

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { audioEngine } from '@/lib/audio';
 import { supabase } from '@/lib/supabase';
 import { createSegmentName } from '@/lib/time';
@@ -41,6 +41,29 @@ const trackIdToIndex = (trackId: string) => {
 };
 
 const trackIndexToId = (index: number) => `track-${index + 1}`;
+
+type CopiableClipData = {
+    audioUrl: string;
+    baseName: string;
+    stemId: string;
+    stemType: LibraryItem['type'];
+    offset: number;
+    duration: number;
+    volume: number;
+    pitch: number;
+    speed: number;
+    sourceDuration?: number | null;
+    isSegment?: boolean;
+};
+
+type CopiedClipGroup = {
+    baseTrackIndex: number;
+    items: Array<{
+        relativeStart: number;
+        trackOffset: number;
+        data: CopiableClipData;
+    }>;
+};
 
 type StemRow = {
     id: string;
@@ -258,6 +281,8 @@ interface ProjectContextType {
     toggleSnap: () => void;
     activeTrackId: string;
     setActiveTrackId: (id: string) => void;
+    isSyncing: boolean;
+    setClipSelectionDirect: (ids: string[]) => void;
 }
 
 const ProjectContext = createContext<ProjectContextType | undefined>(undefined);
@@ -286,10 +311,7 @@ export function ProjectProvider({ children, userId, projectId }: ProjectProvider
     const [clipSelection, setClipSelection] = useState<string[]>([]);
     const [snapEnabled, setSnapEnabled] = useState(true);
     const [activeTrackId, setActiveTrackId] = useState<string>('track-1');
-    const [copiedClip, setCopiedClip] = useState<Clip | null>(null);
-    const clipInsertPromises = useRef<Map<string, Promise<string | undefined>>>(new Map());
-    const pendingClipUpdates = useRef<Map<string, Clip>>(new Map());
-    const clipsRef = useRef<Clip[]>([]);
+    const [copiedGroup, setCopiedGroup] = useState<CopiedClipGroup | null>(null);
 
     const ensureTrackCount = useCallback((count: number) => {
         setTracks(prev => {
@@ -309,6 +331,20 @@ export function ProjectProvider({ children, userId, projectId }: ProjectProvider
         });
     }, []);
 
+    const [pendingSaveCount, setPendingSaveCount] = useState(0);
+    const isSyncing = pendingSaveCount > 0;
+
+    const withSaveTracking = async <T,>(operation: () => Promise<T>): Promise<T | undefined> => {
+        setPendingSaveCount(count => count + 1);
+        try {
+            return await operation();
+        } catch (error) {
+            throw error;
+        } finally {
+            setPendingSaveCount(count => Math.max(0, count - 1));
+        }
+    };
+
     const addSegmentToLibraryState = (segment: LibraryItem) => {
         setLibrary(prev => {
             if (prev.some(existing => existing.id === segment.id)) {
@@ -326,6 +362,7 @@ export function ProjectProvider({ children, userId, projectId }: ProjectProvider
     };
 
     const buildClipPayload = (clip: Clip) => ({
+        id: clip.projectClipId,
         project_id: projectId,
         user_id: userId,
         stem_id: clip.stemId,
@@ -341,78 +378,33 @@ export function ProjectProvider({ children, userId, projectId }: ProjectProvider
         base_name: clip.baseName
     });
 
-    const saveClipRecord = async (clip: Clip): Promise<string | undefined> => {
-        if (!projectId || !userId) return;
-        if (clipInsertPromises.current.has(clip.id)) {
-            pendingClipUpdates.current.set(clip.id, clip);
-            return clipInsertPromises.current.get(clip.id);
-        }
-        const insertPromise = (async () => {
-            try {
-                const { data, error } = await supabase
+    const saveClipRecord = async (clip: Clip) => {
+        if (!projectId || !userId || !clip.projectClipId) return;
+        try {
+            await withSaveTracking(() =>
+                supabase
                     .from('project_clips')
-                    .insert(buildClipPayload(clip))
-                    .select('id')
-                    .single();
-                if (error) throw error;
-                if (data?.id) {
-                    const stillExists = clipsRef.current.some(c => c.id === clip.id);
-                    if (!stillExists) {
-                        pendingClipUpdates.current.delete(clip.id);
-                        await supabase
-                            .from('project_clips')
-                            .delete()
-                            .eq('id', data.id);
-                        return undefined;
-                    }
-                    setClips(prev => prev.map(c => c.id === clip.id ? { ...c, projectClipId: data.id } : c));
-                    const pendingUpdate = pendingClipUpdates.current.get(clip.id);
-                    if (pendingUpdate) {
-                        pendingClipUpdates.current.delete(clip.id);
-                        await supabase
-                            .from('project_clips')
-                            .update(buildClipPayload(pendingUpdate))
-                            .eq('id', data.id)
-                            .eq('user_id', userId);
-                    }
-                    return data.id;
-                }
-            } catch (err) {
-                console.error('Failed to save clip placement', err);
-            } finally {
-                clipInsertPromises.current.delete(clip.id);
-            }
-            return undefined;
-        })();
-        clipInsertPromises.current.set(clip.id, insertPromise);
-        return insertPromise;
+                    .upsert(buildClipPayload(clip), { onConflict: 'id' })
+            );
+        } catch (err) {
+            console.error('Failed to save clip placement', err);
+        }
     };
 
     const syncClipRecord = async (clip: Clip) => {
-        if (!projectId || !userId) return;
-        if (clip.projectClipId) {
-            try {
-                await supabase
-                    .from('project_clips')
-                    .update(buildClipPayload(clip))
-                    .eq('id', clip.projectClipId)
-                    .eq('user_id', userId);
-            } catch (err) {
-                console.error('Failed to update clip placement', err);
-            }
-        } else {
-            await saveClipRecord(clip);
-        }
+        await saveClipRecord(clip);
     };
 
     const deleteClipRecord = async (clip: Clip | undefined) => {
         if (!clip?.projectClipId || !userId) return;
         try {
-            await supabase
-                .from('project_clips')
-                .delete()
-                .eq('id', clip.projectClipId)
-                .eq('user_id', userId);
+            await withSaveTracking(() =>
+                supabase
+                    .from('project_clips')
+                    .delete()
+                    .eq('id', clip.projectClipId)
+                    .eq('user_id', userId)
+            );
         } catch (err) {
             console.error('Failed to delete clip placement', err);
         }
@@ -454,6 +446,10 @@ export function ProjectProvider({ children, userId, projectId }: ProjectProvider
     };
 
     const clearClipSelection = () => setClipSelection([]);
+
+    const setClipSelectionDirect = (ids: string[]) => {
+        setClipSelection(Array.from(new Set(ids)));
+    };
 
     const setSelectedClipId = (id: string | null) => {
         if (!id) {
@@ -562,9 +558,6 @@ export function ProjectProvider({ children, userId, projectId }: ProjectProvider
         }
     }, [clips.length]);
 
-    useEffect(() => {
-        clipsRef.current = clips;
-    }, [clips]);
 
     const addTrack = () => {
         setTracks(prev => [...prev, {
@@ -745,8 +738,10 @@ export function ProjectProvider({ children, userId, projectId }: ProjectProvider
 
     const addClip = (clip: Clip, options: { persist?: boolean } = {}) => {
         const originalSourceDuration = clip.sourceDuration;
+        const clipRecordId = clip.projectClipId ?? crypto.randomUUID();
         const normalizedClip: Clip = {
             ...clip,
+            projectClipId: clipRecordId,
             sourceDuration: clip.sourceDuration ?? clip.duration
         };
         setClips(prev => [...prev, normalizedClip]);
@@ -869,29 +864,69 @@ export function ProjectProvider({ children, userId, projectId }: ProjectProvider
         }
     };
 
-    const copyClip = (id: string) => {
-        const clip = clips.find(c => c.id === id);
-        if (!clip) return;
-        setCopiedClip({ ...clip, projectClipId: undefined });
+    const copyClip = () => {
+        if (clipSelection.length === 0) return;
+        const selectedClips = clips.filter(clip => clipSelection.includes(clip.id));
+        if (selectedClips.length === 0) return;
+        const sorted = [...selectedClips].sort((a, b) => a.startTime - b.startTime);
+        const minStart = sorted[0].startTime;
+        const baseTrackIndex = trackIdToIndex(sorted[0].trackId);
+        const items = sorted.map(clip => ({
+            relativeStart: clip.startTime - minStart,
+            trackOffset: trackIdToIndex(clip.trackId) - baseTrackIndex,
+            data: {
+                audioUrl: clip.audioUrl,
+                baseName: clip.baseName,
+                stemId: clip.stemId,
+                stemType: clip.stemType,
+                offset: clip.offset,
+                duration: clip.duration,
+                volume: clip.volume,
+                pitch: clip.pitch,
+                speed: clip.speed,
+                sourceDuration: clip.sourceDuration,
+                isSegment: clip.isSegment
+            }
+        }));
+        setCopiedGroup({ baseTrackIndex, items });
     };
 
     const pasteClip = (targetTrackId?: string, desiredStart?: number) => {
-        if (!copiedClip) return;
-        const clipDuration = copiedClip.duration;
-        const trackId = targetTrackId || copiedClip.trackId;
-        const maxStart = Math.max(0, duration - clipDuration);
-        const startTime = Math.min(Math.max(0, desiredStart ?? copiedClip.startTime), maxStart);
+        if (!copiedGroup || copiedGroup.items.length === 0) return;
+        const targetIndex = targetTrackId ? trackIdToIndex(targetTrackId) : copiedGroup.baseTrackIndex;
+        const baseTime = desiredStart ?? 0;
+        const addedIds: string[] = [];
 
-        const newClip: Clip = {
-            ...copiedClip,
-            id: crypto.randomUUID(),
-            trackId,
-            startTime,
-            projectClipId: undefined
-        };
-
-        addClip(newClip);
-        setSelectedClipId(newClip.id);
+        copiedGroup.items.forEach(item => {
+            const clipData = item.data;
+            const trackIndex = Math.max(0, targetIndex + item.trackOffset);
+            ensureTrackCount(trackIndex + 1);
+            const startTime = Math.max(0, baseTime + item.relativeStart);
+            const newClip: Clip = {
+                id: crypto.randomUUID(),
+                trackId: trackIndexToId(trackIndex),
+                audioUrl: clipData.audioUrl,
+                name: buildClipName(clipData.baseName, clipData.offset, clipData.offset + clipData.duration, true),
+                baseName: clipData.baseName,
+                stemId: clipData.stemId,
+                stemType: clipData.stemType,
+                componentId: undefined,
+                isSegment: clipData.isSegment,
+                startTime,
+                offset: clipData.offset,
+                duration: clipData.duration,
+                volume: clipData.volume,
+                pitch: clipData.pitch,
+                speed: clipData.speed,
+                sourceDuration: clipData.sourceDuration,
+                projectClipId: undefined
+            };
+            addClip(newClip);
+            addedIds.push(newClip.id);
+        });
+        if (addedIds.length > 0) {
+            setClipSelection(addedIds);
+        }
     };
 
     const persistClipSegment = async (clip: Clip) => {
@@ -1040,7 +1075,9 @@ export function ProjectProvider({ children, userId, projectId }: ProjectProvider
             snapEnabled,
             toggleSnap: () => setSnapEnabled(prev => !prev),
             activeTrackId,
-            setActiveTrackId
+            setActiveTrackId,
+            isSyncing,
+            setClipSelectionDirect
         }}>
             {children}
         </ProjectContext.Provider>

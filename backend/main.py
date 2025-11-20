@@ -121,8 +121,9 @@ def process_audio_task(url: str, user_id: str, project_id: str):
         if stem_records:
             upserted = supabase.table("stems").upsert(
                 stem_records,
-                on_conflict="video_id,stem_type"
-            ).select("id, stem_type, url").execute()
+                on_conflict="video_id,stem_type",
+                returning="representation"
+            ).execute()
             inserted_rows = upserted.data or []
             for row in inserted_rows:
                 project_links.append({

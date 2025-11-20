@@ -135,6 +135,7 @@ export function TimelineClip({ clip }: { clip: Clip }) {
 
     return (
         <div
+            data-role="clip"
             ref={setNodeRef}
             style={style}
             className={`absolute top-2 bottom-2 ${clipColors.timelineBg} border ${containerBorder} rounded-md overflow-hidden group transition-colors`}
