@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useProject, LibraryItem } from '@/context/ProjectContext';
 import { useDraggable } from '@dnd-kit/core';
 import { Music, Mic2, Drum, Guitar, Disc, Scissors, Trash2, Pencil } from 'lucide-react';
+import { getStemAppearance } from '@/lib/colors';
 import { describeSegment } from '@/lib/time';
 
 function DraggableLibraryItem({
@@ -24,12 +25,13 @@ function DraggableLibraryItem({
         opacity: 0.8
     } : undefined;
 
+    const appearance = getStemAppearance(item.type);
     const getIcon = () => {
         switch (item.type) {
-            case 'vocals': return <Mic2 size={16} className="text-pink-400" />;
-            case 'drums': return <Drum size={16} className="text-blue-400" />;
-            case 'bass': return <Guitar size={16} className="text-yellow-400" />;
-            default: return <Disc size={16} className="text-purple-400" />;
+            case 'vocals': return <Mic2 size={16} className={appearance.icon} />;
+            case 'drums': return <Drum size={16} className={appearance.icon} />;
+            case 'bass': return <Guitar size={16} className={appearance.icon} />;
+            default: return <Disc size={16} className={appearance.icon} />;
         }
     };
 
@@ -91,8 +93,28 @@ function DraggableLibraryItem({
     );
 }
 
+function SharedStemItem({ item, onAdd, isOwned }: { item: LibraryItem; onAdd: () => void; isOwned: boolean }) {
+    return (
+        <div className="p-3 bg-zinc-800/40 border border-zinc-700 rounded-lg flex items-center justify-between">
+            <div>
+                <div className="text-sm font-medium text-zinc-200">{item.name}</div>
+                {item.duration && (
+                    <div className="text-xs text-zinc-500">{(item.duration).toFixed(1)}s</div>
+                )}
+            </div>
+            <button
+                onClick={onAdd}
+                disabled={isOwned}
+                className="px-3 py-1 rounded bg-indigo-600 text-white text-xs font-semibold disabled:opacity-40"
+            >
+                {isOwned ? 'Added' : 'Add'}
+            </button>
+        </div>
+    );
+}
+
 export function Library() {
-    const { library, removeLibraryItem, renameLibraryItem } = useProject();
+    const { library, removeLibraryItem, renameLibraryItem, globalLibrary, addGlobalStemToLibrary } = useProject();
     const [confirmingItem, setConfirmingItem] = useState<LibraryItem | null>(null);
     const [renamingItem, setRenamingItem] = useState<LibraryItem | null>(null);
     const [renameValue, setRenameValue] = useState('');
@@ -123,62 +145,74 @@ export function Library() {
                 <p className="text-xs text-zinc-500 mt-1">Drag stems to timeline</p>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-3 custom-scrollbar space-y-6">
-                {library.length === 0 ? (
-                    <div className="text-center py-10 px-4">
-                        <div className="w-12 h-12 bg-zinc-800 rounded-full flex items-center justify-center mx-auto mb-3 text-zinc-600">
-                            <Music size={24} />
-                        </div>
-                        <p className="text-zinc-500 text-sm">No stems yet.</p>
-                        <p className="text-zinc-600 text-xs mt-1">Import a song to get started.</p>
+            <div className="flex-1 overflow-y-auto p-3 pb-24 custom-scrollbar space-y-6">
+                <div>
+                    <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500 text-right mb-2">
+                        Global Stems ({globalLibrary.length})
                     </div>
-                ) : (
-                    <>
-                        <div>
-                            <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500 text-right mb-2">
-                                Original Stems ({originalStems.length})
+                    <div className="space-y-2 max-h-40 overflow-y-auto pr-1 custom-scrollbar">
+                        {globalLibrary.length === 0 ? (
+                            <div className="text-xs text-zinc-500 text-center py-4 border border-dashed border-zinc-700 rounded-lg">
+                                No shared stems yet.
                             </div>
-                            <div className="space-y-2">
-                                {originalStems.map(item => (
-                                    <DraggableLibraryItem
-                                        key={item.id}
-                                        item={item}
-                                        onRemove={setConfirmingItem}
-                                    />
-                                ))}
-                                {originalStems.length === 0 && (
-                                    <div className="text-xs text-zinc-500 bg-zinc-800/40 border border-dashed border-zinc-700 rounded-lg px-3 py-4 text-center">
-                                        No original stems yet.
-                                    </div>
-                                )}
-                            </div>
-                        </div>
+                        ) : (
+                            globalLibrary.map(item => (
+                                <SharedStemItem
+                                    key={item.id}
+                                    item={item}
+                                    onAdd={() => addGlobalStemToLibrary(item)}
+                                    isOwned={library.some(owned => !owned.isSegment && owned.stemId === item.stemId)}
+                                />
+                            ))
+                        )}
+                    </div>
+                </div>
 
-                        <div>
-                            <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500 mb-2">
-                                Chopped Segments ({choppedStems.length})
+                <div>
+                    <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500 text-right mb-2">
+                        Original Stems ({originalStems.length})
+                    </div>
+                    <div className="space-y-2">
+                        {originalStems.length === 0 ? (
+                            <div className="text-xs text-zinc-500 bg-zinc-800/40 border border-dashed border-zinc-700 rounded-lg px-3 py-4 text-center">
+                                No original stems yet.
                             </div>
-                            <div className="space-y-2">
-                                {choppedStems.map(item => (
-                                    <DraggableLibraryItem
-                                        key={item.id}
-                                        item={item}
-                                        onRemove={setConfirmingItem}
-                                        onRename={(current) => {
-                                            setRenamingItem(current);
-                                            setRenameValue(current.name);
-                                        }}
-                                    />
-                                ))}
-                                {choppedStems.length === 0 && (
-                                    <div className="text-xs text-zinc-500 bg-zinc-800/40 border border-dashed border-zinc-700 rounded-lg px-3 py-4 text-center">
-                                        Cuts will appear here after you split stems.
-                                    </div>
-                                )}
+                        ) : (
+                            originalStems.map(item => (
+                                <DraggableLibraryItem
+                                    key={item.id}
+                                    item={item}
+                                    onRemove={setConfirmingItem}
+                                />
+                            ))
+                        )}
+                    </div>
+                </div>
+
+                <div>
+                    <div className="text-[11px] uppercase tracking-[0.2em] text-zinc-500 mb-2">
+                        Chopped Segments ({choppedStems.length})
+                    </div>
+                    <div className="space-y-2">
+                        {choppedStems.length === 0 ? (
+                            <div className="text-xs text-zinc-500 bg-zinc-800/40 border border-dashed border-zinc-700 rounded-lg px-3 py-4 text-center">
+                                Cuts will appear here after you split stems.
                             </div>
-                        </div>
-                    </>
-                )}
+                        ) : (
+                            choppedStems.map(item => (
+                                <DraggableLibraryItem
+                                    key={item.id}
+                                    item={item}
+                                    onRemove={setConfirmingItem}
+                                    onRename={(current) => {
+                                        setRenamingItem(current);
+                                        setRenameValue(current.name);
+                                    }}
+                                />
+                            ))
+                        )}
+                    </div>
+                </div>
             </div>
 
             {confirmingItem && (

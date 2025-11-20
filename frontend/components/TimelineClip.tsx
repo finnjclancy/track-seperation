@@ -3,9 +3,21 @@ import { useProject, Clip } from '@/context/ProjectContext';
 import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { Trash2 } from 'lucide-react';
+import { getStemAppearance } from '@/lib/colors';
 
 export function TimelineClip({ clip }: { clip: Clip }) {
-    const { zoom, tool, splitClip, removeClip, selectedClipId, setSelectedClipId, resizeClip, duration: projectDuration, setActiveTrackId } = useProject();
+    const {
+        zoom,
+        tool,
+        splitClip,
+        removeClip,
+        selectedClipIds,
+        selectClip,
+        toggleClipSelection,
+        resizeClip,
+        duration: projectDuration,
+        setActiveTrackId
+    } = useProject();
     const [resizeState, setResizeState] = useState<{
         edge: 'start' | 'end';
         startX: number;
@@ -37,7 +49,12 @@ export function TimelineClip({ clip }: { clip: Clip }) {
         }
 
         e.stopPropagation();
-        setSelectedClipId(clip.id);
+        const isAdditive = e.metaKey || e.ctrlKey;
+        if (isAdditive) {
+            toggleClipSelection(clip.id);
+        } else {
+            selectClip(clip.id);
+        }
         setActiveTrackId(clip.trackId);
     };
 
@@ -50,7 +67,7 @@ export function TimelineClip({ clip }: { clip: Clip }) {
         if (tool === 'split') return;
         e.stopPropagation();
         e.preventDefault();
-        setSelectedClipId(clip.id);
+        selectClip(clip.id);
         setResizeState({
             edge,
             startX: e.clientX,
@@ -68,6 +85,7 @@ export function TimelineClip({ clip }: { clip: Clip }) {
         const handleMove = (e: MouseEvent) => {
             const deltaPx = e.clientX - resizeState.startX;
             const deltaSeconds = deltaPx / zoom;
+            const sourceLimit = clip.sourceDuration ?? Infinity;
 
             if (resizeState.edge === 'start') {
                 const minStart = Math.max(0, resizeState.initialStart - resizeState.initialOffset);
@@ -79,6 +97,8 @@ export function TimelineClip({ clip }: { clip: Clip }) {
                 newDuration = Math.max(MIN_DURATION, newDuration);
                 let newOffset = resizeState.initialOffset + usedDelta;
                 newOffset = Math.max(0, newOffset);
+                const maxDurationAllowed = sourceLimit - newOffset;
+                newDuration = Math.min(newDuration, maxDurationAllowed);
                 resizeClip(clip.id, {
                     startTime: newStart,
                     duration: newDuration,
@@ -88,7 +108,8 @@ export function TimelineClip({ clip }: { clip: Clip }) {
                 let newDuration = resizeState.initialDuration + deltaSeconds;
                 newDuration = Math.max(MIN_DURATION, newDuration);
                 const maxDuration = projectDuration - resizeState.initialStart;
-                newDuration = Math.min(newDuration, maxDuration);
+                const maxSourceDuration = sourceLimit - clip.offset;
+                newDuration = Math.min(newDuration, maxDuration, maxSourceDuration);
                 resizeClip(clip.id, {
                     duration: newDuration
                 });
@@ -106,19 +127,27 @@ export function TimelineClip({ clip }: { clip: Clip }) {
             window.removeEventListener('mousemove', handleMove);
             window.removeEventListener('mouseup', handleUp);
         };
-    }, [resizeState, zoom, resizeClip, clip.id, projectDuration]);
+    }, [resizeState, zoom, resizeClip, clip.id, projectDuration, clip.offset, clip.sourceDuration]);
+
+    const isSelected = selectedClipIds.includes(clip.id);
+    const clipColors = getStemAppearance(clip.stemType);
+    const containerBorder = isSelected ? 'border-white shadow-lg' : clipColors.timelineBorder;
 
     return (
         <div
             ref={setNodeRef}
             style={style}
-            className={`absolute top-2 bottom-2 bg-indigo-600/80 border ${selectedClipId === clip.id ? 'border-white shadow-lg' : 'border-indigo-400'} rounded-md overflow-hidden group transition-colors`}
+            className={`absolute top-2 bottom-2 ${clipColors.timelineBg} border ${containerBorder} rounded-md overflow-hidden group transition-colors`}
         >
             <div
                 {...listeners}
                 {...attributes}
                 onClick={handleClick}
-                className={`absolute inset-0 ${tool === 'split' ? 'cursor-crosshair hover:bg-red-500/80 hover:border-red-400' : 'cursor-move hover:bg-indigo-600'}`}
+                className={`absolute inset-0 ${
+                    tool === 'split'
+                        ? 'cursor-crosshair hover:bg-red-500/80 hover:border-red-400'
+                        : `cursor-move ${clipColors.timelineHover}`
+                }`}
             >
                 <div className="p-2 text-xs font-bold truncate text-white drop-shadow-md pointer-events-none">
                     {clip.name}

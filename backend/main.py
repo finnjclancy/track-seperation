@@ -5,7 +5,7 @@ import os
 import shutil
 import uuid
 import traceback
-from services.downloader import download_audio
+from services.downloader import download_audio, get_video_metadata
 from services.separator import separate_audio
 from services.storage import upload_file, supabase
 import soundfile as sf
@@ -27,12 +27,47 @@ class YoutubeRequest(BaseModel):
 def process_audio_task(url: str, user_id: str, project_id: str):
     temp_dir = f"temp_{project_id}"
     try:
+        metadata = get_video_metadata(url)
+        video_id = metadata["id"]
+        base_title = metadata["title"]
+
+        def mark_completed(stems_map, message):
+            supabase.table("projects").update({
+                "status": "completed",
+                "progress": 100,
+                "status_message": message,
+                "title": base_title,
+                "stems": stems_map
+            }).eq("id", project_id).execute()
+
+        existing = supabase.table("stems").select("id, stem_type, url, duration, user_id, video_id").eq("video_id", video_id).execute()
+        existing_rows = existing.data or []
+        if existing_rows:
+            user_rows = [row for row in existing_rows if row.get("user_id") == user_id]
+            stems_source = user_rows if user_rows else existing_rows
+            stems_map = {row["stem_type"]: row["url"] for row in stems_source}
+
+            link_rows = [{
+                "project_id": project_id,
+                "stem_id": row["id"],
+                "user_id": user_id
+            } for row in existing_rows]
+            if link_rows:
+                supabase.table("project_stems").upsert(
+                    link_rows,
+                    on_conflict="project_id,stem_id"
+                ).execute()
+
+            status_note = "Stems already in your library" if user_rows else "Stems ready (reused existing processing)"
+            mark_completed(stems_map, status_note)
+            return
+
         # 1. Download
         print(f"Downloading {url}...")
-        # Pass project_id to download_audio so it can update progress
         download_info = download_audio(url, output_dir=temp_dir, project_id=project_id)
         audio_path = download_info["path"]
         title = download_info["title"]
+        video_id = download_info["id"]
         
         # 2. Separate
         print(f"Separating {title}...")
@@ -73,7 +108,8 @@ def process_audio_task(url: str, user_id: str, project_id: str):
                 "name": f"{title} - {stem_name}",
                 "stem_type": stem_name,
                 "url": public_url,
-                "duration": duration
+                "duration": duration,
+                "video_id": video_id
             })
 
             supabase.table("projects").update({
@@ -81,10 +117,24 @@ def process_audio_task(url: str, user_id: str, project_id: str):
                 "status_message": f"Uploading {stem_name} ({idx}/{total_stems})"
             }).eq("id", project_id).execute()
 
+        project_links = []
         if stem_records:
-            supabase.table("stems").upsert(
+            upserted = supabase.table("stems").upsert(
                 stem_records,
-                on_conflict="project_id,stem_type"
+                on_conflict="video_id,stem_type"
+            ).select("id, stem_type, url").execute()
+            inserted_rows = upserted.data or []
+            for row in inserted_rows:
+                project_links.append({
+                    "project_id": project_id,
+                    "stem_id": row["id"],
+                    "user_id": user_id
+                })
+
+        if project_links:
+            supabase.table("project_stems").upsert(
+                project_links,
+                on_conflict="project_id,stem_id"
             ).execute()
 
         # 4. Save Final Result

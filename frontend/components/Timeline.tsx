@@ -41,7 +41,7 @@ function TrackRow({ track, clips, isActive, onActivate }: { track: Track, clips:
 }
 
 export function Timeline() {
-    const { tracks, clips, addTrack, zoom, currentTime, duration, setZoom, tool, setTool, seek, setSelectedClipId, snapEnabled, toggleSnap, splitClip, activeTrackId, setActiveTrackId } = useProject();
+    const { tracks, clips, addTrack, zoom, currentTime, duration, setZoom, tool, setTool, seek, snapEnabled, toggleSnap, splitClip, activeTrackId, setActiveTrackId, selectedClipIds, clearClipSelection } = useProject();
     // Remove the main timeline droppable, we want individual track droppables
     // const { setNodeRef } = useDroppable({ id: 'timeline' });
 
@@ -57,7 +57,10 @@ export function Timeline() {
     );
 
     const handleSplitAtPlayhead = () => {
-        clipsAtPlayhead.forEach(clip => splitClip(clip.id, currentTime));
+        const targetClips = selectedClipIds.length > 0
+            ? clipsAtPlayhead.filter(clip => selectedClipIds.includes(clip.id))
+            : clipsAtPlayhead;
+        targetClips.forEach(clip => splitClip(clip.id, currentTime));
     };
 
     // Generate time markers every second with stronger ticks every 5 seconds
@@ -141,7 +144,7 @@ export function Timeline() {
             </div>
 
             {/* Timeline Area */}
-            <div className="flex-1 overflow-auto relative custom-scrollbar" onClick={() => setSelectedClipId(null)}>
+            <div className="flex-1 overflow-auto relative custom-scrollbar pb-40" onClick={() => clearClipSelection()} style={{ scrollbarWidth: 'thin' }}>
                 <div className="min-w-full h-full relative" style={{ width: duration * zoom }}>
                     {/* Time Ruler */}
                     <div 
@@ -163,7 +166,7 @@ export function Timeline() {
                     </div>
 
                     {/* Track Rows */}
-                    <div className="relative min-h-[400px]">
+                    <div className="relative min-h-[400px] pb-32">
                         {tracks.map((track) => (
                             <TrackRow
                                 key={track.id}

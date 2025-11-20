@@ -61,3 +61,17 @@ def download_audio(url: str, output_dir: str = "temp_downloads", project_id: str
             "title": sanitize_filename(title),
             "id": video_id
         }
+
+def get_video_metadata(url: str):
+    opts = {
+        'quiet': True,
+        'no_warnings': True,
+    }
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+        video_id = info['id']
+        title = sanitize_filename(info.get('title', 'Unknown Title'))
+        return {
+            "id": video_id,
+            "title": title
+        }

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { audioEngine } from '@/lib/audio';
 import { supabase } from '@/lib/supabase';
 import { createSegmentName } from '@/lib/time';
@@ -33,24 +33,62 @@ const loadAudioDuration = (url: string): Promise<number> => {
 const buildClipName = (baseName: string, offset: number, duration: number, force = false) =>
     createSegmentName(baseName, offset, offset + duration, force);
 
+const trackIdToIndex = (trackId: string) => {
+    const match = trackId?.match(/track-(\d+)/);
+    if (!match) return 0;
+    const parsed = parseInt(match[1], 10);
+    return Number.isNaN(parsed) ? 0 : Math.max(0, parsed - 1);
+};
+
+const trackIndexToId = (index: number) => `track-${index + 1}`;
+
 type StemRow = {
     id: string;
-    project_id: string;
+    project_id: string | null;
     name: string;
     stem_type: string;
     url: string;
     duration: number | null;
     created_at: string;
+    video_id?: string | null;
+    user_id?: string | null;
+    project_stem_id?: string;
+};
+
+type ProjectStemRow = {
+    id: string;
+    project_id: string;
+    stem_id: string;
+    user_id: string;
+    created_at: string;
+    stems: StemRow | null;
 };
 
 type SegmentRow = {
     id: string;
     stem_id: string;
     user_id: string;
+    project_id: string;
     name: string;
     start_time: number | null;
     end_time: number | null;
     created_at: string;
+};
+
+type ProjectClipRow = {
+    id: string;
+    stem_id: string;
+    stem_segment_id: string | null;
+    track_index: number | null;
+    start_time: number | null;
+    source_offset: number | null;
+    duration: number | null;
+    volume: number | null;
+    pitch: number | null;
+    speed: number | null;
+    name: string | null;
+    base_name: string | null;
+    stems: StemRow | null;
 };
 
 const createSegmentLibraryItem = (
@@ -70,50 +108,76 @@ const createSegmentLibraryItem = (
         startOffset: start,
         endOffset: end,
         isSegment: true,
-        sourceName: parentStem.name
+        sourceName: parentStem.name,
+        videoId: parentStem.video_id ?? null,
+        sourceDuration: parentStem.duration,
+        projectId: segment.project_id
     };
 };
 
-const buildLibraryItems = (stems: StemRow[], segments: SegmentRow[]): LibraryItem[] => {
+const buildLibraryItems = (projectStems: ProjectStemRow[], segments: SegmentRow[]): LibraryItem[] => {
     const stemsMap = new Map<string, StemRow>();
-    stems.forEach(stem => stemsMap.set(stem.id, stem));
-
-    const segmentsByStem = new Map<string, LibraryItem[]>();
-    segments.forEach(segment => {
-        const parentStem = stemsMap.get(segment.stem_id);
-        if (!parentStem) return;
-        const item = createSegmentLibraryItem(segment, parentStem);
-        const existing = segmentsByStem.get(segment.stem_id) ?? [];
-        existing.push(item);
-        segmentsByStem.set(segment.stem_id, existing);
+    projectStems.forEach(entry => {
+        if (!entry.stems) return;
+        stemsMap.set(entry.stem_id, {
+            ...entry.stems,
+            project_stem_id: entry.id,
+            project_id: entry.project_id
+        });
     });
 
     const items: LibraryItem[] = [];
-    stems.forEach(stem => {
+    stemsMap.forEach(stem => {
         items.push({
+            id: stem.project_stem_id ?? stem.id,
+            projectStemId: stem.project_stem_id ?? undefined,
+            stemId: stem.id,
+            name: stem.name,
+            url: stem.url,
+            type: (stem.stem_type as LibraryItem['type']) ?? 'other',
+            duration: stem.duration,
+            sourceName: stem.name,
+            videoId: stem.video_id ?? null,
+            sourceDuration: stem.duration,
+            projectId: stem.project_id ?? undefined
+        });
+    });
+
+    segments.forEach(segment => {
+        const parentStem = stemsMap.get(segment.stem_id);
+        if (!parentStem) return;
+        items.push(createSegmentLibraryItem(segment, parentStem));
+    });
+
+    return items;
+};
+
+const buildGlobalLibraryItems = (stems: (StemRow & { user_id: string | null })[], currentUserId: string): LibraryItem[] => {
+    const seen = new Map<string, LibraryItem>();
+    stems.forEach(stem => {
+        const key = `${stem.video_id || stem.url}-${stem.stem_type}`;
+        if (seen.has(key)) return;
+        const isUserStem = stem.user_id === currentUserId;
+        seen.set(key, {
             id: stem.id,
             stemId: stem.id,
             name: stem.name,
             url: stem.url,
             type: (stem.stem_type as LibraryItem['type']) ?? 'other',
             duration: stem.duration,
-            sourceName: stem.name
+            sourceName: stem.name,
+            videoId: stem.video_id ?? null,
+            isShared: !isUserStem,
+            sourceDuration: stem.duration
         });
-
-        const stemSegments = segmentsByStem.get(stem.id);
-        if (stemSegments && stemSegments.length > 0) {
-            stemSegments
-                .sort((a, b) => (a.startOffset ?? 0) - (b.startOffset ?? 0));
-            items.push(...stemSegments);
-        }
     });
-
-    return items;
+    return Array.from(seen.values());
 };
 
 export interface LibraryItem {
     id: string;
     stemId: string;
+    projectStemId?: string;
     name: string;
     url: string;
     type: 'vocals' | 'drums' | 'bass' | 'other';
@@ -123,6 +187,10 @@ export interface LibraryItem {
     isSegment?: boolean;
     componentId?: string;
     sourceName?: string;
+    videoId?: string | null;
+    isShared?: boolean;
+    sourceDuration?: number | null;
+    projectId?: string;
 }
 
 export interface Clip {
@@ -135,12 +203,14 @@ export interface Clip {
     stemType: LibraryItem['type'];
     componentId?: string;
     isSegment?: boolean;
+    projectClipId?: string;
     startTime: number; // Where it starts on the timeline (seconds)
     offset: number; // Where the audio starts within the file (seconds)
     duration: number; // How long the clip is (seconds)
     volume: number;
     pitch: number;
     speed: number;
+    sourceDuration?: number | null;
 }
 
 export interface Track {
@@ -152,14 +222,17 @@ export interface Track {
 }
 
 interface ProjectContextType {
+    projectId: string;
     tracks: Track[];
     clips: Clip[];
     library: LibraryItem[];
+    globalLibrary: LibraryItem[];
     addTrack: () => void;
     addToLibrary: (item: LibraryItem) => void;
     removeLibraryItem: (itemId: string) => Promise<void>;
     renameLibraryItem: (itemId: string, newName: string) => Promise<void>;
-    addClip: (clip: Clip) => void;
+    addGlobalStemToLibrary: (item: LibraryItem) => Promise<void>;
+    addClip: (clip: Clip, options?: { persist?: boolean }) => void;
     updateClip: (id: string, updates: Partial<Clip>) => void;
     removeClip: (id: string) => void;
     resizeClip: (id: string, updates: { startTime?: number; duration?: number; offset?: number }) => void;
@@ -176,7 +249,11 @@ interface ProjectContextType {
     tool: 'pointer' | 'split';
     setTool: (tool: 'pointer' | 'split') => void;
     selectedClipId: string | null;
+    selectedClipIds: string[];
     setSelectedClipId: (id: string | null) => void;
+    selectClip: (id: string, additive?: boolean) => void;
+    toggleClipSelection: (id: string) => void;
+    clearClipSelection: () => void;
     snapEnabled: boolean;
     toggleSnap: () => void;
     activeTrackId: string;
@@ -187,10 +264,11 @@ const ProjectContext = createContext<ProjectContextType | undefined>(undefined);
 
 type ProjectProviderProps = {
     userId: string;
+    projectId: string;
     children: React.ReactNode;
 };
 
-export function ProjectProvider({ children, userId }: ProjectProviderProps) {
+export function ProjectProvider({ children, userId, projectId }: ProjectProviderProps) {
     const [tracks, setTracks] = useState<Track[]>([
         { id: 'track-1', name: 'Track 1', isMuted: false, isSoloed: false, volume: 1 },
         { id: 'track-2', name: 'Track 2', isMuted: false, isSoloed: false, volume: 1 },
@@ -199,15 +277,37 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
     ]);
     const [clips, setClips] = useState<Clip[]>([]);
     const [library, setLibrary] = useState<LibraryItem[]>([]);
+    const [globalLibrary, setGlobalLibrary] = useState<LibraryItem[]>([]);
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [duration] = useState(300); // Default 5 mins
     const [zoom, setZoom] = useState(50); // 50px = 1 second
     const [tool, setTool] = useState<'pointer' | 'split'>('pointer');
-    const [selectedClipId, setSelectedClipId] = useState<string | null>(null);
+    const [clipSelection, setClipSelection] = useState<string[]>([]);
     const [snapEnabled, setSnapEnabled] = useState(true);
     const [activeTrackId, setActiveTrackId] = useState<string>('track-1');
     const [copiedClip, setCopiedClip] = useState<Clip | null>(null);
+    const clipInsertPromises = useRef<Map<string, Promise<string | undefined>>>(new Map());
+    const pendingClipUpdates = useRef<Map<string, Clip>>(new Map());
+    const clipsRef = useRef<Clip[]>([]);
+
+    const ensureTrackCount = useCallback((count: number) => {
+        setTracks(prev => {
+            if (prev.length >= count) return prev;
+            const nextTracks = [...prev];
+            while (nextTracks.length < count) {
+                const index = nextTracks.length;
+                nextTracks.push({
+                    id: trackIndexToId(index),
+                    name: `Track ${index + 1}`,
+                    isMuted: false,
+                    isSoloed: false,
+                    volume: 1
+                });
+            }
+            return nextTracks;
+        });
+    }, []);
 
     const addSegmentToLibraryState = (segment: LibraryItem) => {
         setLibrary(prev => {
@@ -225,6 +325,99 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
         setCurrentTime(position);
     };
 
+    const buildClipPayload = (clip: Clip) => ({
+        project_id: projectId,
+        user_id: userId,
+        stem_id: clip.stemId,
+        stem_segment_id: clip.componentId ?? null,
+        track_index: trackIdToIndex(clip.trackId),
+        start_time: clip.startTime,
+        source_offset: clip.offset,
+        duration: clip.duration,
+        volume: clip.volume,
+        pitch: clip.pitch,
+        speed: clip.speed,
+        name: clip.name,
+        base_name: clip.baseName
+    });
+
+    const saveClipRecord = async (clip: Clip): Promise<string | undefined> => {
+        if (!projectId || !userId) return;
+        if (clipInsertPromises.current.has(clip.id)) {
+            pendingClipUpdates.current.set(clip.id, clip);
+            return clipInsertPromises.current.get(clip.id);
+        }
+        const insertPromise = (async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('project_clips')
+                    .insert(buildClipPayload(clip))
+                    .select('id')
+                    .single();
+                if (error) throw error;
+                if (data?.id) {
+                    const stillExists = clipsRef.current.some(c => c.id === clip.id);
+                    if (!stillExists) {
+                        pendingClipUpdates.current.delete(clip.id);
+                        await supabase
+                            .from('project_clips')
+                            .delete()
+                            .eq('id', data.id);
+                        return undefined;
+                    }
+                    setClips(prev => prev.map(c => c.id === clip.id ? { ...c, projectClipId: data.id } : c));
+                    const pendingUpdate = pendingClipUpdates.current.get(clip.id);
+                    if (pendingUpdate) {
+                        pendingClipUpdates.current.delete(clip.id);
+                        await supabase
+                            .from('project_clips')
+                            .update(buildClipPayload(pendingUpdate))
+                            .eq('id', data.id)
+                            .eq('user_id', userId);
+                    }
+                    return data.id;
+                }
+            } catch (err) {
+                console.error('Failed to save clip placement', err);
+            } finally {
+                clipInsertPromises.current.delete(clip.id);
+            }
+            return undefined;
+        })();
+        clipInsertPromises.current.set(clip.id, insertPromise);
+        return insertPromise;
+    };
+
+    const syncClipRecord = async (clip: Clip) => {
+        if (!projectId || !userId) return;
+        if (clip.projectClipId) {
+            try {
+                await supabase
+                    .from('project_clips')
+                    .update(buildClipPayload(clip))
+                    .eq('id', clip.projectClipId)
+                    .eq('user_id', userId);
+            } catch (err) {
+                console.error('Failed to update clip placement', err);
+            }
+        } else {
+            await saveClipRecord(clip);
+        }
+    };
+
+    const deleteClipRecord = async (clip: Clip | undefined) => {
+        if (!clip?.projectClipId || !userId) return;
+        try {
+            await supabase
+                .from('project_clips')
+                .delete()
+                .eq('id', clip.projectClipId)
+                .eq('user_id', userId);
+        } catch (err) {
+            console.error('Failed to delete clip placement', err);
+        }
+    };
+
     const removeLibraryComponent = (componentId?: string) => {
         if (!componentId) return;
         setLibrary(prev => prev.filter(item => item.id !== componentId && item.componentId !== componentId));
@@ -236,9 +429,37 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
             await supabase
                 .from('stem_segments')
                 .delete()
-                .eq('id', segmentId);
+                .eq('id', segmentId)
+                .eq('project_id', projectId);
         } catch (err) {
             console.error('Failed to delete segment', err);
+        }
+    };
+
+    const selectedClipId = clipSelection[0] ?? null;
+    const selectedClipIds = clipSelection;
+
+    const selectClip = (id: string, additive: boolean = false) => {
+        setClipSelection(prev => {
+            if (additive) {
+                if (prev.includes(id)) return prev;
+                return [...prev, id];
+            }
+            return [id];
+        });
+    };
+
+    const toggleClipSelection = (id: string) => {
+        setClipSelection(prev => prev.includes(id) ? prev.filter(cid => cid !== id) : [...prev, id]);
+    };
+
+    const clearClipSelection = () => setClipSelection([]);
+
+    const setSelectedClipId = (id: string | null) => {
+        if (!id) {
+            clearClipSelection();
+        } else {
+            selectClip(id);
         }
     };
 
@@ -246,14 +467,43 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
         const item = library.find(entry => entry.id === itemId);
         if (!item) return;
 
-        setLibrary(prev => prev.filter(entry => entry.id !== itemId));
+        if (item.isSegment) {
+            setLibrary(prev => prev.filter(entry => entry.id !== itemId));
+        } else {
+            setLibrary(prev => prev.filter(entry => entry.isSegment ? entry.stemId !== item.stemId : entry.id !== itemId));
+        }
         setClips(prev => prev.filter(clip => item.isSegment ? clip.componentId !== itemId : clip.stemId !== item.stemId));
 
         try {
             if (item.isSegment) {
-                await supabase.from('stem_segments').delete().eq('id', itemId);
+                await supabase.from('stem_segments')
+                    .delete()
+                    .eq('id', itemId)
+                    .eq('project_id', projectId);
+                await supabase
+                    .from('project_clips')
+                    .delete()
+                    .eq('project_id', projectId)
+                    .eq('user_id', userId)
+                    .eq('stem_segment_id', itemId);
             } else {
-                await supabase.from('stems').delete().eq('id', itemId);
+                const membershipId = item.projectStemId ?? item.id;
+                await supabase
+                    .from('project_stems')
+                    .delete()
+                    .eq('id', membershipId)
+                    .eq('project_id', projectId);
+                await supabase
+                    .from('stem_segments')
+                    .delete()
+                    .eq('project_id', projectId)
+                    .eq('stem_id', item.stemId);
+                await supabase
+                    .from('project_clips')
+                    .delete()
+                    .eq('project_id', projectId)
+                    .eq('user_id', userId)
+                    .eq('stem_id', item.stemId);
             }
         } catch (err) {
             console.error('Failed to delete library item', err);
@@ -274,7 +524,8 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
                 await supabase
                     .from('stem_segments')
                     .update({ name: trimmedName })
-                    .eq('id', itemId);
+                    .eq('id', itemId)
+                    .eq('project_id', projectId);
             } else {
                 await supabase
                     .from('stems')
@@ -298,10 +549,22 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
     }, [isPlaying]);
 
     useEffect(() => {
+        return () => {
+            audioEngine.stop();
+            setIsPlaying(false);
+            setCurrentTime(0);
+        };
+    }, []);
+
+    useEffect(() => {
         if (clips.length === 0) {
             audioEngine.clearAll();
         }
     }, [clips.length]);
+
+    useEffect(() => {
+        clipsRef.current = clips;
+    }, [clips]);
 
     const addTrack = () => {
         setTracks(prev => [...prev, {
@@ -320,78 +583,213 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
         });
     };
 
+    const addGlobalStemToLibrary = async (item: LibraryItem) => {
+        if (!userId || !projectId) return;
+        const alreadyHave = library.some(existing => !existing.isSegment && existing.stemId === item.stemId);
+        if (alreadyHave) return;
+        try {
+            const { data, error } = await supabase
+                .from('project_stems')
+                .insert({
+                    project_id: projectId,
+                    stem_id: item.stemId,
+                    user_id: userId,
+                })
+                .select('id, project_id, stem_id, stems:stem_id (id, name, stem_type, url, duration, video_id)')
+                .single();
+            if (error || !data) throw error;
+
+            if (data.stems) {
+                addToLibrary({
+                    id: data.id,
+                    projectStemId: data.id,
+                    stemId: data.stem_id,
+                    name: data.stems.name,
+                    url: data.stems.url,
+                    type: (data.stems.stem_type as LibraryItem['type']) ?? 'other',
+                    duration: data.stems.duration,
+                    sourceName: data.stems.name,
+                    videoId: data.stems.video_id ?? null,
+                    sourceDuration: data.stems.duration,
+                    projectId: data.project_id
+                });
+            }
+        } catch (err) {
+            console.error('Failed to add global stem', err);
+        }
+    };
+
+    const ensureClipMetadata = useCallback(async (clip: Clip) => {
+        try {
+            const actualDuration = await loadAudioDuration(clip.audioUrl);
+            if (!actualDuration) return;
+
+            let shouldUpdateEngine = false;
+            setClips(prev => prev.map(c => {
+                if (c.id !== clip.id) return c;
+                const updates: Partial<Clip> = {};
+                if (!c.isSegment && Math.abs(actualDuration - c.duration) > 0.05) {
+                    updates.duration = actualDuration;
+                    shouldUpdateEngine = true;
+                }
+                if (!c.sourceDuration || Math.abs((c.sourceDuration ?? 0) - actualDuration) > 0.05) {
+                    updates.sourceDuration = actualDuration;
+                }
+                return Object.keys(updates).length > 0 ? { ...c, ...updates } : c;
+            }));
+
+            if (shouldUpdateEngine) {
+                audioEngine.updateClip(clip.id, { duration: actualDuration });
+            }
+        } catch (err) {
+            console.warn('Unable to read stem metadata', err);
+        }
+    }, []);
+
     useEffect(() => {
-        if (!userId) return;
+        if (!userId || !projectId) return;
         let isMounted = true;
         (async () => {
-            const { data: stemsData, error: stemsError } = await supabase
-                .from('stems')
-                .select('id, project_id, name, stem_type, url, duration, created_at')
+            const { data: projectStemsData, error: projectStemError } = await supabase
+                .from('project_stems')
+                .select('id, project_id, stem_id, user_id, created_at, stems:stem_id (id, project_id, name, stem_type, url, duration, created_at, video_id, user_id)')
+                .eq('project_id', projectId)
                 .eq('user_id', userId)
                 .order('created_at', { ascending: false });
-            if (stemsError) {
-                console.error('Failed to load stems', stemsError);
+            if (projectStemError) {
+                console.error('Failed to load project stems', projectStemError);
                 return;
             }
 
             const { data: segmentData, error: segmentsError } = await supabase
                 .from('stem_segments')
-                .select('id, name, stem_id, start_time, end_time, created_at')
+                .select('id, name, stem_id, project_id, start_time, end_time, created_at')
                 .eq('user_id', userId)
+                .eq('project_id', projectId)
                 .order('created_at', { ascending: false });
             if (segmentsError) {
                 console.error('Failed to load stem segments', segmentsError);
             }
 
-            if (!isMounted || !stemsData) return;
+            const { data: globalStemsData, error: globalError } = await supabase
+                .from('stems')
+                .select('id, project_id, name, stem_type, url, duration, created_at, video_id, user_id')
+                .order('created_at', { ascending: false });
+            if (globalError) {
+                console.error('Failed to load global stems', globalError);
+            }
 
-            setLibrary(buildLibraryItems(stemsData, segmentData ?? []));
+            const { data: projectClipsData, error: clipsError } = await supabase
+                .from('project_clips')
+                .select('id, stem_id, stem_segment_id, track_index, start_time, source_offset, duration, volume, pitch, speed, name, base_name, stems:stem_id (id, name, stem_type, url, duration, video_id)')
+                .eq('project_id', projectId)
+                .eq('user_id', userId)
+                .order('created_at', { ascending: true });
+            if (clipsError) {
+                console.error('Failed to load project clips', clipsError);
+            }
+
+            if (!isMounted) return;
+
+            setLibrary(buildLibraryItems(projectStemsData ?? [], segmentData ?? []));
+            setGlobalLibrary(buildGlobalLibraryItems(globalStemsData ?? [], userId));
+
+            const clipRows = (projectClipsData ?? []).filter(row => row.stems) as ProjectClipRow[];
+            const requiredTracks = clipRows.reduce((max, row) => Math.max(max, (row.track_index ?? 0) + 1), 0);
+            ensureTrackCount(Math.max(4, requiredTracks));
+
+            const loadedClips: Clip[] = clipRows.map(row => {
+                const stem = row.stems!;
+                const baseName = row.base_name || stem.name;
+                const offset = row.source_offset ?? 0;
+                const clipDuration = row.duration ?? stem.duration ?? 0;
+                const clipName = row.name ?? createSegmentName(baseName, offset, offset + clipDuration, true);
+                return {
+                    id: crypto.randomUUID(),
+                    projectClipId: row.id,
+                    trackId: trackIndexToId(row.track_index ?? 0),
+                    audioUrl: stem.url,
+                    name: clipName,
+                    baseName: baseName,
+                    stemId: row.stem_id,
+                    stemType: (stem.stem_type as LibraryItem['type']) ?? 'other',
+                    componentId: row.stem_segment_id ?? undefined,
+                    isSegment: Boolean(row.stem_segment_id),
+                    startTime: row.start_time ?? 0,
+                    offset,
+                    duration: clipDuration,
+                    volume: row.volume ?? 0.8,
+                    pitch: row.pitch ?? 0,
+                    speed: row.speed ?? 1,
+                    sourceDuration: stem.duration ?? clipDuration
+                };
+            });
+
+            setClips(loadedClips);
+            audioEngine.clearAll();
+            loadedClips.forEach(async (clip) => {
+                try {
+                    await audioEngine.addClip(clip);
+                    if (!clip.isSegment) {
+                        ensureClipMetadata(clip);
+                    }
+                } catch (err) {
+                    console.error('Failed to initialize stored clip audio', err);
+                }
+            });
         })();
         return () => {
             isMounted = false;
         };
-    }, [userId]);
+    }, [userId, projectId, ensureTrackCount, ensureClipMetadata]);
 
-    const ensureClipDuration = async (clip: Clip) => {
-        if (clip.isSegment) return;
-        try {
-            const actualDuration = await loadAudioDuration(clip.audioUrl);
-            if (!actualDuration || Math.abs(actualDuration - clip.duration) < 0.05) return;
-            setClips(prev => prev.map(c => c.id === clip.id ? { ...c, duration: actualDuration } : c));
-            audioEngine.updateClip(clip.id, { duration: actualDuration });
-        } catch (err) {
-            console.warn('Unable to read stem duration', err);
-        }
-    };
-
-    const addClip = (clip: Clip) => {
-        setClips(prev => [...prev, clip]);
+    const addClip = (clip: Clip, options: { persist?: boolean } = {}) => {
+        const originalSourceDuration = clip.sourceDuration;
+        const normalizedClip: Clip = {
+            ...clip,
+            sourceDuration: clip.sourceDuration ?? clip.duration
+        };
+        setClips(prev => [...prev, normalizedClip]);
         audioEngine
-            .addClip(clip)
+            .addClip(normalizedClip)
             .then(() => {
-                if (!clip.isSegment) {
-                    ensureClipDuration(clip);
+                if (!normalizedClip.isSegment || originalSourceDuration == null) {
+                    ensureClipMetadata(normalizedClip);
                 }
             })
             .catch(err => console.error('Failed to initialize clip audio', err));
+        if (options.persist !== false) {
+            saveClipRecord(normalizedClip);
+        }
     };
 
     const updateClip = (id: string, updates: Partial<Clip>) => {
-        setClips(prev => prev.map(c => c.id === id ? {
-            ...c,
-            ...updates,
-            name: updates.offset !== undefined || updates.duration !== undefined
-                ? createSegmentName(c.baseName, updates.offset ?? c.offset, (updates.offset ?? c.offset) + (updates.duration ?? c.duration), true)
-                : c.name
-        } : c));
+        let updatedClip: Clip | null = null;
+        setClips(prev => prev.map(c => {
+            if (c.id !== id) return c;
+            const nextClip = {
+                ...c,
+                ...updates,
+                name: updates.offset !== undefined || updates.duration !== undefined
+                    ? createSegmentName(c.baseName, updates.offset ?? c.offset, (updates.offset ?? c.offset) + (updates.duration ?? c.duration), true)
+                    : c.name
+            };
+            updatedClip = nextClip;
+            return nextClip;
+        }));
         audioEngine.updateClip(id, updates);
         refreshPlayback();
+        if (updatedClip) {
+            syncClipRecord(updatedClip);
+        }
     };
 
     const removeClip = (id: string) => {
+        const clip = clips.find(c => c.id === id);
         setClips(prev => prev.filter(c => c.id !== id));
         audioEngine.removeClip(id);
-        setSelectedClipId(current => (current === id ? null : current));
+        setClipSelection(prev => prev.filter(cid => cid !== id));
+        deleteClipRecord(clip);
     };
 
     const updateSegmentMetadata = (componentId: string, startOffset: number, duration: number) => {
@@ -405,11 +803,35 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
         const clip = clips.find(c => c.id === id);
         if (!clip) return;
 
-        const newStart = Math.max(0, updates.startTime ?? clip.startTime);
-        const newDuration = Math.max(0.05, Math.min(updates.duration ?? clip.duration, duration - newStart));
-        const newOffset = Math.max(0, updates.offset ?? clip.offset);
+        const MIN_DURATION = 0.05;
+        const projectLength = duration;
+        const sourceLimit = clip.sourceDuration ?? Infinity;
+
+        let newStart = Math.max(0, updates.startTime ?? clip.startTime);
+        const latestPossibleStart = Math.max(0, projectLength - MIN_DURATION);
+        newStart = Math.min(newStart, latestPossibleStart);
+
+        let newOffset = Math.max(0, updates.offset ?? clip.offset);
+        if (Number.isFinite(sourceLimit)) {
+            const maxOffset = Math.max(0, sourceLimit - MIN_DURATION);
+            newOffset = Math.min(newOffset, maxOffset);
+        }
+
+        let newDuration = Math.max(MIN_DURATION, updates.duration ?? clip.duration);
+        newDuration = Math.min(newDuration, Math.max(MIN_DURATION, projectLength - newStart));
+        if (Number.isFinite(sourceLimit)) {
+            const maxDurationFromSource = Math.max(MIN_DURATION, sourceLimit - newOffset);
+            newDuration = Math.min(newDuration, maxDurationFromSource);
+        }
+
+        // Adjust start again if clipping at end of timeline trimmed the length
+        if (newStart + newDuration > projectLength) {
+            newStart = Math.max(0, projectLength - newDuration);
+        }
+
         const newName = createSegmentName(clip.baseName, newOffset, newOffset + newDuration, true);
 
+        let updatedClip: Clip | null = null;
         setClips(prev => prev.map(c => c.id === id ? {
             ...c,
             startTime: newStart,
@@ -417,6 +839,13 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
             offset: newOffset,
             name: newName
         } : c));
+        updatedClip = {
+            ...(clip as Clip),
+            startTime: newStart,
+            duration: newDuration,
+            offset: newOffset,
+            name: newName
+        };
 
         audioEngine.updateClip(id, {
             startTime: newStart,
@@ -431,15 +860,19 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
                     start_time: newOffset,
                     end_time: newOffset + newDuration
                 })
-                .eq('id', clip.componentId);
+                .eq('id', clip.componentId)
+                .eq('project_id', projectId);
         }
         refreshPlayback();
+        if (updatedClip) {
+            syncClipRecord(updatedClip);
+        }
     };
 
     const copyClip = (id: string) => {
         const clip = clips.find(c => c.id === id);
         if (!clip) return;
-        setCopiedClip({ ...clip });
+        setCopiedClip({ ...clip, projectClipId: undefined });
     };
 
     const pasteClip = (targetTrackId?: string, desiredStart?: number) => {
@@ -453,7 +886,8 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
             ...copiedClip,
             id: crypto.randomUUID(),
             trackId,
-            startTime
+            startTime,
+            projectClipId: undefined
         };
 
         addClip(newClip);
@@ -470,11 +904,12 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
                 .insert({
                     stem_id: clip.stemId,
                     user_id: userId,
+                    project_id: projectId,
                     name: clip.name,
                     start_time: clip.offset,
                     end_time: clip.offset + clip.duration
                 })
-                .select('id, name, start_time, end_time')
+                .select('id, name, start_time, end_time, project_id')
                 .single();
 
             if (error || !data) {
@@ -494,12 +929,16 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
                 startOffset: start,
                 endOffset: end,
                 isSegment: true,
-                sourceName: baseName
+                sourceName: baseName,
+                sourceDuration: clip.sourceDuration,
+                projectId: data.project_id
             };
 
             addSegmentToLibraryState(newItem);
 
-            setClips(prev => prev.map(c => c.id === clip.id ? { ...c, componentId: data.id, isSegment: true } : c));
+            const updatedClip: Clip = { ...clip, componentId: data.id, isSegment: true };
+            setClips(prev => prev.map(c => c.id === clip.id ? updatedClip : c));
+            syncClipRecord(updatedClip);
         } catch (err) {
             console.error('Failed to persist segment', err);
         }
@@ -529,7 +968,9 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
             duration: firstDuration,
             name: buildClipName(baseName, clip.offset, firstDuration, true),
             isSegment: true,
-            componentId: undefined
+            componentId: undefined,
+            sourceDuration: clip.sourceDuration,
+            projectClipId: undefined
         };
 
         const clip2Offset = clip.offset + relativeSplit;
@@ -541,7 +982,9 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
             duration: secondDuration,
             name: buildClipName(baseName, clip2Offset, secondDuration, true),
             isSegment: true,
-            componentId: undefined
+            componentId: undefined,
+            sourceDuration: clip.sourceDuration,
+            projectClipId: undefined
         };
 
         // Remove old clip and add new ones
@@ -562,13 +1005,16 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
 
     return (
         <ProjectContext.Provider value={{
+            projectId,
             tracks,
             clips,
             library,
+            globalLibrary,
             addTrack,
             addToLibrary,
             removeLibraryItem,
             renameLibraryItem,
+            addGlobalStemToLibrary,
             addClip,
             updateClip,
             resizeClip,
@@ -586,7 +1032,11 @@ export function ProjectProvider({ children, userId }: ProjectProviderProps) {
             tool,
             setTool,
             selectedClipId,
+            selectedClipIds,
             setSelectedClipId,
+            selectClip,
+            toggleClipSelection,
+            clearClipSelection,
             snapEnabled,
             toggleSnap: () => setSnapEnabled(prev => !prev),
             activeTrackId,

@@ -1,14 +1,19 @@
 import React, { useState } from 'react';
 import { X, Download, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { useProject } from '@/context/ProjectContext';
+import { useRouter } from 'next/navigation';
 
-export function ImportModal({ onClose }: { onClose: () => void }) {
+type ImportModalProps = {
+    onClose: () => void;
+    onComplete?: (projectId: string) => void;
+};
+
+export function ImportModal({ onClose, onComplete }: ImportModalProps) {
     const [url, setUrl] = useState('');
     const [status, setStatus] = useState<'idle' | 'processing' | 'complete' | 'error'>('idle');
     const [progress, setProgress] = useState(0);
     const [statusMessage, setStatusMessage] = useState('');
-    const { addToLibrary } = useProject();
+    const router = useRouter();
 
     const handleImport = async () => {
         if (!url) return;
@@ -48,46 +53,14 @@ export function ImportModal({ onClose }: { onClose: () => void }) {
                         setStatus('complete');
                         setProgress(100);
                         
-                        // Refresh stems from database to capture metadata like IDs
-                        const { data: stemRows, error: stemError } = await supabase
-                            .from('stems')
-                            .select('id, name, stem_type, url, duration')
-                            .eq('project_id', projectId);
-
-                        if (stemError) {
-                            console.error('Failed to fetch stems after processing', stemError);
-                        }
-
-                        const fallbackTitle = project.title || 'Unknown Song';
-
-                        if (stemRows && stemRows.length > 0) {
-                            stemRows.forEach(row => {
-                                addToLibrary({
-                                    id: row.id,
-                                    stemId: row.id,
-                                    name: row.name,
-                                    url: row.url,
-                                    type: row.stem_type,
-                                    duration: row.duration,
-                                    sourceName: row.name
-                                });
-                            });
-                        } else {
-                            Object.entries(project.stems).forEach(([stemType, url]) => {
-                                const generatedId = `${projectId}-${stemType}`;
-                                addToLibrary({
-                                    id: generatedId,
-                                    stemId: generatedId,
-                                    name: `${fallbackTitle} - ${stemType}`,
-                                    url: url as string,
-                                    type: stemType as any,
-                                    duration: null,
-                                    sourceName: `${fallbackTitle} - ${stemType}`
-                                });
-                            });
-                        }
-
-                        setTimeout(onClose, 1500);
+                        setTimeout(() => {
+                            onClose();
+                            if (onComplete) {
+                                onComplete(projectId);
+                            } else {
+                                router.push(`/projects/${projectId}`);
+                            }
+                        }, 1000);
                     } else if (project.status === 'failed') {
                         clearInterval(interval);
                         setStatus('error');
@@ -96,7 +69,8 @@ export function ImportModal({ onClose }: { onClose: () => void }) {
                 }
             }, 1000);
 
-        } catch (e) {
+        } catch (err) {
+            console.error('Failed to start import', err);
             setStatus('error');
             setStatusMessage('Failed to connect to server');
         }
